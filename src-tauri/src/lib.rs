@@ -19,7 +19,6 @@ struct AppState {
     providers: Vec<Box<dyn Provider>>,
     snapshots: RwLock<Vec<UsageSnapshot>>,
     store: RwLock<Store>,
-    interval_secs: RwLock<u64>,
     wake: Notify,
 }
 
@@ -181,8 +180,17 @@ async fn set_tray_display(
 }
 
 #[tauri::command]
-async fn set_interval(state: State<'_, Shared>, secs: u64) -> Result<(), ()> {
-    *state.interval_secs.write().await = secs.clamp(60, 3600);
+async fn get_refresh_secs(state: State<'_, Shared>) -> Result<u64, ()> {
+    Ok(state.store.read().await.config.refresh_secs)
+}
+
+#[tauri::command]
+async fn set_refresh_secs(state: State<'_, Shared>, secs: u64) -> Result<(), String> {
+    let mut st = state.store.write().await;
+    st.config.refresh_secs = secs.clamp(60, 3600);
+    st.save()?;
+    // Restart the sleep so the new interval applies right away.
+    state.wake.notify_one();
     Ok(())
 }
 
@@ -214,12 +222,15 @@ pub fn run() {
         providers: providers::registry(),
         snapshots: RwLock::new(vec![]),
         store: RwLock::new(Store::load(dir)),
-        interval_secs: RwLock::new(600),
         wake: Notify::new(),
     }) };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_snapshots,
             refresh,
@@ -228,7 +239,8 @@ pub fn run() {
             logout,
             get_tray_display,
             set_tray_display,
-            set_interval,
+            get_refresh_secs,
+            set_refresh_secs,
             open_url,
             quit
         ])
@@ -275,7 +287,7 @@ pub fn run() {
                 migrate_legacy(&state).await;
                 loop {
                     refresh_all(&handle, &state).await;
-                    let secs = *state.interval_secs.read().await;
+                    let secs = state.store.read().await.config.refresh_secs;
                     tokio::select! {
                         _ = tokio::time::sleep(Duration::from_secs(secs)) => {}
                         _ = state.wake.notified() => {}

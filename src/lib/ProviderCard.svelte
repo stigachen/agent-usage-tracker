@@ -10,6 +10,7 @@
   let login = $state<DeviceCode | null>(null);
   let loginError = $state<string | null>(null);
   let copied = $state(false);
+  let confirming = $state<string | null>(null);
 
   const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
   const prettyPlan = (p: string) => p.replace(/_/g, " ");
@@ -63,8 +64,21 @@
     setTimeout(() => (copied = false), 1500);
   }
 
-  function signOut(snap: UsageSnapshot) {
-    invoke("logout", { provider: snap.providerId, account: snap.accountId });
+  // First click arms the button, second click within 3s signs out.
+  async function signOut(snap: UsageSnapshot) {
+    const id = snap.accountId!;
+    if (confirming !== id) {
+      confirming = id;
+      setTimeout(() => confirming === id && (confirming = null), 3000);
+      return;
+    }
+    confirming = null;
+    loginError = null;
+    try {
+      await invoke("logout", { provider: snap.providerId, account: id });
+    } catch (e) {
+      loginError = String(e);
+    }
   }
 </script>
 
@@ -103,9 +117,13 @@
       <div class="acc-head">
         <span class="acc-name">@{snap.account}</span>
         {#if snap.plan}<span class="plan">{prettyPlan(snap.plan)}</span>{/if}
+        {#if confirming === snap.accountId}
+          <button class="armed" onclick={() => signOut(snap)}>Sign out?</button>
+        {:else}
         <button class="ghost" onclick={() => signOut(snap)} title="Sign out" aria-label="Sign out @{snap.account}">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
+        {/if}
       </div>
 
       {#if snap.needsAuth}
@@ -192,6 +210,10 @@
   .account + .account { border-top: 1px solid var(--border); padding-top: 12px; }
   .acc-head { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
   .acc-head .ghost { margin-left: auto; width: 20px; height: 20px; }
+  .armed {
+    margin-left: auto; border: 0; border-radius: 6px; padding: 2px 8px; font-size: 11px;
+    font-weight: 500; background: #ff453a; color: white; cursor: pointer;
+  }
   .acc-name { font-weight: 500; }
   .hero { display: flex; flex-direction: column; gap: 10px; }
   .hero-top { display: flex; justify-content: space-between; align-items: flex-end; }

@@ -24,11 +24,18 @@ pub enum TrayDisplay {
     IconOnly,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
     pub accounts: Vec<AccountRef>,
     pub tray_display: TrayDisplay,
+    pub refresh_secs: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self { accounts: vec![], tray_display: TrayDisplay::default(), refresh_secs: 600 }
+    }
 }
 
 pub struct Store {

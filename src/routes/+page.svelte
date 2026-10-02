@@ -4,6 +4,7 @@
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import ProviderCard from "$lib/ProviderCard.svelte";
+  import Settings from "$lib/Settings.svelte";
   import type { UsageSnapshot } from "$lib/types";
 
   const MAX_HEIGHT = 600;
@@ -11,6 +12,7 @@
   let mainEl: HTMLElement;
   let refreshing = $state(false);
   let loaded = $state(false);
+  let showSettings = $state(false);
   let groups = $derived(
     Object.values(
       snaps.reduce<Record<string, UsageSnapshot[]>>((g, s) => {
@@ -51,7 +53,10 @@
         refreshing = false;
         now = Date.now();
       }),
-      listen("panel-shown", () => (refreshing = true)),
+      listen("panel-shown", () => {
+        refreshing = true;
+        showSettings = false;
+      }),
     ];
     // Fit the window to its content so there is no empty space below the cards.
     const win = getCurrentWindow();
@@ -75,11 +80,19 @@
 </script>
 
 <main bind:this={mainEl}>
+  {#if showSettings}
+    <Settings {snaps} onclose={() => (showSettings = false)} />
+  {:else}
   <div class="top">
     <h1>Agent Usage</h1>
+    <div class="actions">
+    <button class="icon" onclick={() => (showSettings = true)} title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
     <button class="icon" class:spin={refreshing} onclick={refresh} title="Refresh" aria-label="Refresh">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
     </button>
+    </div>
   </div>
 
   <div class="list">
@@ -100,6 +113,7 @@
     <span class="muted">{updatedText}</span>
     <button class="link" onclick={() => invoke("quit")}>Quit</button>
   </footer>
+  {/if}
 </main>
 
 <style>
@@ -122,6 +136,7 @@
     -webkit-font-smoothing: antialiased; user-select: none; cursor: default; overflow: hidden;
   }
   main { max-height: 600px; box-sizing: border-box; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .actions { display: flex; gap: 6px; }
   .top { display: flex; justify-content: space-between; align-items: center; }
   h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
   .list { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

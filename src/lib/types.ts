@@ -23,3 +23,8 @@ export interface DeviceCode {
   deviceCode: string;
   interval: number;
 }
+
+export type TrayDisplay =
+  | { mode: "lowest" }
+  | { mode: "pinned"; provider: string; account: string }
+  | { mode: "iconOnly" };
