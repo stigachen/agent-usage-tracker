@@ -6,9 +6,10 @@ macOS builds are signed, notarized and published by GitHub Actions
 ## Cut a release
 
 1. Bump `version` in `src-tauri/tauri.conf.json` (and `package.json` to keep them in sync).
-2. Commit and push to `main`.
-3. Tag and push:
+2. Open a PR with the version bump and merge it (`main` only accepts changes via PR).
+3. Update local `main`, then tag and push:
    ```bash
+   git checkout main && git pull
    git tag v0.1.1
    git push origin v0.1.1
    ```
