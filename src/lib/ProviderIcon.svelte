@@ -18,6 +18,13 @@
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
     <path d="M5 19 19 5" /><path d="M5 5l5.5 5.5" /><path d="M13.5 13.5 19 19" />
   </svg>
+{:else if id === "claude"}
+  <!-- Simplified Anthropic-style starburst. -->
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+    {#each [0, 45, 90, 135] as a (a)}
+      <path d="M12 4v16" transform="rotate({a} 12 12)" />
+    {/each}
+  </svg>
 {:else if id === "overview"}
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
     <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.8" />

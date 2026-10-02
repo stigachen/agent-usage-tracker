@@ -1,3 +1,4 @@
+pub mod claude;
 pub mod codex;
 pub mod copilot;
 pub mod grok;
@@ -102,5 +103,5 @@ pub trait Provider: Send + Sync {
 }
 
 pub fn registry() -> Vec<Box<dyn Provider>> {
-    vec![Box::new(copilot::Copilot), Box::new(codex::Codex), Box::new(grok::Grok)]
+    vec![Box::new(copilot::Copilot), Box::new(codex::Codex), Box::new(grok::Grok), Box::new(claude::Claude)]
 }
