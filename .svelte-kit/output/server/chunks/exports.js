@@ -1,4 +1,4 @@
-import { Ct as noop, bt as safe_not_equal } from "./server.js";
+import { wt as noop, xt as safe_not_equal } from "./server.js";
 //#region node_modules/.pnpm/@sveltejs+kit@2.70.3_@sveltejs+vite-plugin-svelte@7.3.1_svelte@5.57.1_vite@8.3.1__svelt_7e5a362fa1b8de762a988e5829e2902b/node_modules/@sveltejs/kit/src/utils/url.js
 /**
 * Matches a URI scheme. See https://www.rfc-editor.org/rfc/rfc3986#section-3.1

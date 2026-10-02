@@ -1,33 +1,46 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { fly } from "svelte/transition";
   import type { DeviceCode, UsageSnapshot } from "./types";
 
-  let { snap }: { snap: UsageSnapshot } = $props();
+  let { snap, now }: { snap: UsageSnapshot; now: number } = $props();
   let login = $state<DeviceCode | null>(null);
   let loginError = $state<string | null>(null);
+  let copied = $state(false);
 
   const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+  const prettyPlan = (p: string) => p.replace(/_/g, " ");
+
+  let limited = $derived(snap.windows.filter((w) => w.limit));
+  let unlimited = $derived(snap.windows.filter((w) => !w.limit));
+  // The headline quota is the most consumed one.
+  let hero = $derived(
+    limited.reduce<(typeof limited)[number] | null>(
+      (a, w) => (!a || w.used / w.limit! > a.used / a.limit! ? w : a),
+      null,
+    ),
+  );
+  let others = $derived(limited.filter((w) => w !== hero));
 
   function resetIn(iso: string | null): string {
     if (!iso) return "";
-    const ms = new Date(iso).getTime() - Date.now();
+    const ms = new Date(iso).getTime() - now;
     if (ms <= 0) return "Resets soon";
     const d = Math.floor(ms / 86_400_000);
     const h = Math.floor((ms % 86_400_000) / 3_600_000);
     return d > 0 ? `Resets in ${d}d ${h}h` : `Resets in ${h}h`;
   }
 
-  const prettyPlan = (p: string) => p.replace(/_/g, " ");
+  const resetDate = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" }) : "";
 
-  function tone(r: number) {
-    return r >= 0.9 ? "danger" : r >= 0.7 ? "warn" : "ok";
-  }
+  const tone = (r: number) => (r >= 0.9 ? "danger" : r >= 0.7 ? "warn" : "ok");
 
   async function signIn() {
     loginError = null;
     try {
       login = await invoke<DeviceCode>("start_login", { provider: snap.providerId });
-      await navigator.clipboard.writeText(login.userCode).catch(() => {});
+      await copyCode();
       await invoke("open_url", { url: login.verificationUri });
       await invoke("finish_login", { provider: snap.providerId, code: login });
     } catch (e) {
@@ -36,9 +49,20 @@
       login = null;
     }
   }
+
+  async function copyCode() {
+    if (!login) return;
+    await navigator.clipboard.writeText(login.userCode).catch(() => {});
+    copied = true;
+    setTimeout(() => (copied = false), 1500);
+  }
+
+  function signOut() {
+    invoke("logout", { provider: snap.providerId });
+  }
 </script>
 
-<section class="card">
+<section class="card" in:fly={{ y: 6, duration: 220 }}>
   <header>
     <div class="logo">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -47,44 +71,69 @@
     </div>
     <div class="title">
       <h2>{snap.providerName}</h2>
-      {#if snap.account}<span class="sub">@{snap.account}{snap.plan ? ` · ${prettyPlan(snap.plan)}` : ""}</span>{/if}
+      {#if snap.account}
+        <span class="sub">@{snap.account}{#if snap.plan}<span class="plan">{prettyPlan(snap.plan)}</span>{/if}</span>
+      {/if}
     </div>
+    {#if !snap.needsAuth}
+      <button class="ghost" onclick={signOut} title="Sign out" aria-label="Sign out">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+      </button>
+    {/if}
   </header>
 
   {#if snap.needsAuth}
     {#if login}
       <div class="login">
-        <p>Enter this code on GitHub (copied):</p>
-        <code>{login.userCode}</code>
-        <p class="muted">Waiting for authorization…</p>
+        <span class="muted small">Enter this code on GitHub</span>
+        <button class="code" onclick={copyCode} title="Copy">{login.userCode}</button>
+        <span class="muted small">{copied ? "Copied to clipboard" : "Waiting for authorization…"}</span>
       </div>
     {:else}
       <button class="primary" onclick={signIn}>Sign in with GitHub</button>
     {/if}
     {#if loginError}<p class="error">{loginError}</p>{/if}
   {:else if snap.error}
-    <p class="error">{snap.error}</p>
+    <div class="error-box">
+      <span>Couldn't load usage</span>
+      <span class="muted small">{snap.error}</span>
+    </div>
   {:else}
-    {#each snap.windows as w (w.label)}
+    {#if hero}
+      {@const r = Math.min(hero.used / hero.limit!, 1)}
+      <div class="hero">
+        <div class="hero-top">
+          <div>
+            <div class="big {tone(r)}-text">{(100 - r * 100).toFixed(r > 0.99 ? 1 : 0)}<span class="pct">%</span></div>
+            <div class="muted small">{hero.label} left</div>
+          </div>
+          <div class="right">
+            <div class="value">{fmt.format(hero.used)}<span class="muted"> / {fmt.format(hero.limit!)}</span></div>
+            <div class="muted small" title={resetDate(hero.resetsAt)}>{resetIn(hero.resetsAt)}</div>
+          </div>
+        </div>
+        <div class="bar"><div class="fill {tone(r)}" style:width="{Math.max(r * 100, 1.5)}%"></div></div>
+      </div>
+    {/if}
+
+    {#each others as w (w.label)}
+      {@const r = Math.min(w.used / w.limit!, 1)}
       <div class="quota">
         <div class="row">
           <span class="label">{w.label}</span>
-          {#if w.limit}
-            <span class="value">{fmt.format(w.used)} <span class="muted">/ {fmt.format(w.limit)}</span></span>
-          {:else}
-            <span class="value muted">Unlimited</span>
-          {/if}
+          <span class="value">{fmt.format(w.used)}<span class="muted"> / {fmt.format(w.limit!)}</span></span>
         </div>
-        {#if w.limit}
-          {@const r = Math.min(w.used / w.limit, 1)}
-          <div class="bar"><div class="fill {tone(r)}" style:width="{Math.max(r * 100, 1.5)}%"></div></div>
-          <div class="row foot">
-            <span class="muted">{(100 - r * 100).toFixed(1)}% left</span>
-            <span class="muted">{resetIn(w.resetsAt)}</span>
-          </div>
-        {/if}
+        <div class="bar thin"><div class="fill {tone(r)}" style:width="{Math.max(r * 100, 1.5)}%"></div></div>
       </div>
     {/each}
+
+    {#if unlimited.length}
+      <div class="chips">
+        {#each unlimited as w (w.label)}
+          <span class="chip"><span class="dot"></span>{w.label}<span class="muted">∞</span></span>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </section>
 
@@ -92,38 +141,82 @@
   .card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 14px;
+    border-radius: 14px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   }
   header { display: flex; align-items: center; gap: 10px; }
   .logo {
-    width: 28px; height: 28px; border-radius: 8px;
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
     display: grid; place-items: center;
     background: var(--chip);
   }
+  .title { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
   h2 { margin: 0; font-size: 13px; font-weight: 600; }
-  .title { display: flex; flex-direction: column; }
-  .sub { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+  .sub { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .plan {
+    text-transform: capitalize; font-size: 10px; font-weight: 500;
+    padding: 1px 6px; border-radius: 99px; background: var(--chip); color: var(--fg);
+  }
+  .ghost {
+    border: 0; background: none; color: var(--muted); cursor: pointer;
+    width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center;
+    opacity: 0; transition: opacity 0.15s, background 0.15s;
+  }
+  .card:hover .ghost { opacity: 1; }
+  .ghost:hover { background: var(--chip); color: var(--fg); }
+
+  .hero { display: flex; flex-direction: column; gap: 10px; }
+  .hero-top { display: flex; justify-content: space-between; align-items: flex-end; }
+  .big {
+    font-size: 30px; font-weight: 650; letter-spacing: -0.03em; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .pct { font-size: 16px; font-weight: 600; margin-left: 1px; opacity: 0.7; }
+  .right { text-align: right; display: flex; flex-direction: column; gap: 3px; }
+  .ok-text { color: var(--fg); }
+  .warn-text { color: #ff9f0a; }
+  .danger-text { color: #ff453a; }
+
   .quota { display: flex; flex-direction: column; gap: 6px; }
   .row { display: flex; justify-content: space-between; align-items: baseline; }
   .label { font-size: 12px; font-weight: 500; }
-  .value { font-size: 12px; font-variant-numeric: tabular-nums; }
-  .foot { font-size: 11px; }
+  .value { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .small { font-size: 11px; }
   .muted { color: var(--muted); }
-  .bar { height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; }
-  .fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
-  .ok { background: linear-gradient(90deg, #34c759, #30d158); }
+
+  .bar { height: 8px; border-radius: 99px; background: var(--track); overflow: hidden; }
+  .bar.thin { height: 5px; }
+  .fill { height: 100%; border-radius: 99px; transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+  .ok { background: linear-gradient(90deg, #30d158, #34c759); }
   .warn { background: linear-gradient(90deg, #ff9f0a, #ffb340); }
   .danger { background: linear-gradient(90deg, #ff453a, #ff6961); }
-  .primary {
-    border: 0; border-radius: 8px; padding: 8px;
-    background: var(--accent); color: white; font-weight: 500; cursor: pointer;
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; padding: 3px 8px; border-radius: 99px; background: var(--chip);
   }
-  .login { text-align: center; font-size: 12px; }
-  .login p { margin: 4px 0; }
-  code { font-size: 20px; letter-spacing: 3px; font-weight: 600; user-select: text; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: #30d158; }
+
+  .primary {
+    border: 0; border-radius: 9px; padding: 8px; font-size: 12px;
+    background: var(--accent); color: white; font-weight: 500; cursor: pointer;
+    transition: filter 0.15s;
+  }
+  .primary:hover { filter: brightness(1.08); }
+  .login { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .code {
+    border: 1px dashed var(--border-strong); background: var(--chip); color: var(--fg);
+    border-radius: 9px; padding: 6px 14px; cursor: pointer;
+    font: 600 20px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 3px;
+  }
   .error { color: #ff453a; font-size: 12px; margin: 0; }
+  .error-box {
+    display: flex; flex-direction: column; gap: 2px; font-size: 12px;
+    padding: 8px 10px; border-radius: 9px; background: rgba(255, 69, 58, 0.1); color: #ff453a;
+  }
 </style>

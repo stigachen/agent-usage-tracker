@@ -1,6 +1,6 @@
 import "./index-server.js";
 import "./internal.js";
-import { $ as push, A as effect_tracking, B as increment, C as set_active_effect, D as branch, E as block, F as clear_text_content, G as Batch, H as mutable_source, I as create_text, J as defer_effect, K as current_batch, L as get_first_child, M as pause_effect, N as render_effect, O as component_root, P as invoke_error_boundary, Q as pop, R as get_next_sibling, S as get, St as define_property, T as untrack, U as set, V as internal_set, W as source, X as component_context, Y as queue_micro_task, Z as mark_as_component, _t as EFFECT_PRESERVED, a as render, b as active_effect, ct as hydrating, dt as set_hydrating, et as set_component_context, ft as skip_nodes, gt as HYDRATION_ERROR, ht as svelte_boundary_reset_noop, it as svelte_boundary_reset_onerror, j as move_effect, k as destroy_effect, lt as next, nt as async_mode_flag, ot as hydrate_next, p as setContext, pt as hydration_mismatch, q as flushSync, r as derived, rt as hydration_failed, st as hydrate_node, ut as set_hydrate_node, vt as EFFECT_TRANSPARENT, w as set_active_reaction, x as active_reaction, xt as array_from, y as is_passive_event, yt as LEGACY_PROPS, z as init_operations } from "./server.js";
+import { $ as pop, A as destroy_effect, B as init_operations, C as get, Ct as define_property, D as block, E as untrack, F as invoke_error_boundary, G as source, H as internal_set, I as clear_text_content, J as flushSync, K as Batch, L as create_text, M as move_effect, N as pause_effect, O as branch, P as render_effect, Q as mark_as_component, R as get_first_child, S as active_reaction, St as array_from, T as set_active_reaction, U as mutable_source, V as increment, W as set, X as queue_micro_task, Y as defer_effect, Z as component_context, _t as HYDRATION_ERROR, a as render, at as svelte_boundary_reset_onerror, b as is_passive_event, bt as LEGACY_PROPS, ct as hydrate_node, dt as set_hydrate_node, et as push, ft as set_hydrating, gt as svelte_boundary_reset_noop, it as hydration_failed, j as effect_tracking, k as component_root, lt as hydrating, mt as hydration_mismatch, p as setContext, pt as skip_nodes, q as current_batch, r as derived, rt as async_mode_flag, st as hydrate_next, tt as set_component_context, ut as next, vt as EFFECT_PRESERVED, w as set_active_effect, x as active_effect, yt as EFFECT_TRANSPARENT, z as get_next_sibling } from "./server.js";
 /**
 * `$env/dynamic/public`
 * @type {Record<string, string>}
@@ -1036,7 +1036,7 @@ var options = {
 		app: ({ head, body, assets, nonce, env }) => "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <link rel=\"icon\" href=\"" + assets + "/favicon.png\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <title>Agent Usage</title>\n    " + head + "\n  </head>\n  <body data-sveltekit-preload-data=\"hover\">\n    <div style=\"display: contents\">" + body + "</div>\n  </body>\n</html>\n",
 		error: error_template_default
 	},
-	version_hash: "eey22d"
+	version_hash: "1yc7n98"
 };
 async function get_hooks() {
 	let handle;
