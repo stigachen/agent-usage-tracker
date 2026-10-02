@@ -111,10 +111,19 @@ function _page($$renderer, $$props) {
 		let snaps = [];
 		let refreshing = false;
 		let showSettings = false;
-		derived(() => Object.values(snaps.reduce((g, s) => {
+		let groups = derived(() => Object.values(snaps.reduce((g, s) => {
 			(g[s.providerId] ??= []).push(s);
 			return g;
 		}, {})));
+		let tab = "overview";
+		derived(() => [{
+			id: "overview",
+			name: "Overview"
+		}, ...groups().map((g) => ({
+			id: g[0].providerId,
+			name: g[0].providerName
+		}))]);
+		derived(() => groups().find((g) => g[0].providerId === tab));
 		let now = Date.now();
 		let updated = derived(() => snaps[0] ? new Date(snaps[0].fetchedAt).getTime() : null);
 		let updatedText = derived(() => {
@@ -130,7 +139,9 @@ function _page($$renderer, $$props) {
 				onclose: () => showSettings = false
 			});
 		} else {
-			$$renderer.push(`<!--[-1--><div class="top svelte-1uha8ag"><h1 class="svelte-1uha8ag">Agent Usage</h1> <div class="actions svelte-1uha8ag"><button class="icon svelte-1uha8ag" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg></button> <button${attr_class("icon svelte-1uha8ag", void 0, { "spin": refreshing })} title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="svelte-1uha8ag"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg></button></div></div> <div class="list svelte-1uha8ag">`);
+			$$renderer.push(`<!--[-1--><div class="top svelte-1uha8ag"><h1 class="svelte-1uha8ag">Agent Usage</h1> <div class="actions svelte-1uha8ag"><button class="icon svelte-1uha8ag" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg></button> <button${attr_class("icon svelte-1uha8ag", void 0, { "spin": refreshing })} title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" class="svelte-1uha8ag"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg></button></div></div> `);
+			$$renderer.push("<!--[-1-->");
+			$$renderer.push(`<!--]--> <div class="list svelte-1uha8ag">`);
 			$$renderer.push(`<!--[-1--><div class="skeleton svelte-1uha8ag"><div class="sk-row svelte-1uha8ag"><div class="sk sk-logo svelte-1uha8ag"></div><div class="sk sk-line w40 svelte-1uha8ag"></div></div> <div class="sk sk-line big svelte-1uha8ag"></div> <div class="sk sk-bar svelte-1uha8ag"></div></div>`);
 			$$renderer.push(`<!--]--></div> <footer class="svelte-1uha8ag"><span class="muted svelte-1uha8ag">${escape_html(updatedText())}</span> <button class="link svelte-1uha8ag">Quit</button></footer>`);
 		}

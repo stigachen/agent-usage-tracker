@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { fly } from "svelte/transition";
+  import ProviderIcon from "./ProviderIcon.svelte";
   import type { DeviceCode, UsageSnapshot } from "./types";
 
   let { snaps, now }: { snaps: UsageSnapshot[]; now: number } = $props();
@@ -13,6 +14,8 @@
   let confirming = $state<string | null>(null);
 
   const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+  // Providers that only report percentages use limit = 100.
+  const isPct = (w: { limit: number | null }) => w.limit === 100;
   const prettyPlan = (p: string) => p.replace(/_/g, " ");
 
   function resetIn(iso: string | null): string {
@@ -84,16 +87,12 @@
 
 <section class="card" in:fly={{ y: 6, duration: 220 }}>
   <header>
-    <div class="logo">
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-        <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"/>
-      </svg>
-    </div>
+    <div class="logo"><ProviderIcon id={first.providerId} /></div>
     <div class="title">
       <h2>{first.providerName}</h2>
       {#if accounts.length > 1}<span class="sub">{accounts.length} accounts</span>{/if}
     </div>
-    {#if accounts.length && !login}
+    {#if accounts.length && !login && !first.managed}
       <button class="ghost show" onclick={signIn} title="Add account" aria-label="Add account">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -106,6 +105,8 @@
       <button class="code" onclick={copyCode} title="Copy">{login.userCode}</button>
       <span class="muted small">{copied ? "Copied to clipboard" : "Waiting for authorization…"}</span>
     </div>
+  {:else if !accounts.length && first.loginHint}
+    <div class="hint">{first.loginHint}</div>
   {:else if !accounts.length}
     <button class="primary" onclick={signIn}>Sign in with GitHub</button>
   {/if}
@@ -117,7 +118,9 @@
       <div class="acc-head">
         <span class="acc-name">@{snap.account}</span>
         {#if snap.plan}<span class="plan">{prettyPlan(snap.plan)}</span>{/if}
-        {#if confirming === snap.accountId}
+        {#if snap.managed}
+          <span></span>
+        {:else if confirming === snap.accountId}
           <button class="armed" onclick={() => signOut(snap)}>Sign out?</button>
         {:else}
         <button class="ghost" onclick={() => signOut(snap)} title="Sign out" aria-label="Sign out @{snap.account}">
@@ -127,7 +130,7 @@
       </div>
 
       {#if snap.needsAuth}
-        <div class="error-box"><span>Session expired</span><span class="muted small">Sign out and add the account again.</span></div>
+        <div class="error-box"><span>Session expired</span><span class="muted small">{snap.loginHint ?? "Sign out and add the account again."}</span></div>
       {:else if snap.error}
         <div class="error-box">
           <span>Couldn't load usage</span>
@@ -143,7 +146,11 @@
                 <div class="muted small">{q.hero.label} left</div>
               </div>
               <div class="right">
-                <div class="value">{fmt.format(q.hero.used)}<span class="muted"> / {fmt.format(q.hero.limit!)}</span></div>
+                {#if isPct(q.hero)}
+                  <div class="value">{fmt.format(q.hero.used)}%<span class="muted"> used</span></div>
+                {:else}
+                  <div class="value">{fmt.format(q.hero.used)}<span class="muted"> / {fmt.format(q.hero.limit!)}</span></div>
+                {/if}
                 <div class="muted small" title={resetDate(q.hero.resetsAt)}>{resetIn(q.hero.resetsAt)}</div>
               </div>
             </div>
@@ -156,9 +163,14 @@
           <div class="quota">
             <div class="row">
               <span class="label">{w.label}</span>
-              <span class="value">{fmt.format(w.used)}<span class="muted"> / {fmt.format(w.limit!)}</span></span>
+              {#if isPct(w)}
+                <span class="value">{Math.floor(100 - r * 100)}%<span class="muted"> left</span></span>
+              {:else}
+                <span class="value">{fmt.format(w.used)}<span class="muted"> / {fmt.format(w.limit!)}</span></span>
+              {/if}
             </div>
             <div class="bar thin"><div class="fill {tone(r)}" style:width="{Math.max(r * 100, 1.5)}%"></div></div>
+            {#if w.resetsAt}<span class="muted small">{resetIn(w.resetsAt)}</span>{/if}
           </div>
         {/each}
 
@@ -259,6 +271,9 @@
     border: 1px dashed var(--border-strong); background: var(--chip); color: var(--fg);
     border-radius: 9px; padding: 6px 14px; cursor: pointer;
     font: 600 20px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 3px;
+  }
+  .hint {
+    font-size: 12px; color: var(--muted); padding: 8px 10px; border-radius: 9px; background: var(--chip);
   }
   .error { color: #ff453a; font-size: 12px; margin: 0; }
   .error-box {

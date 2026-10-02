@@ -10,7 +10,7 @@ return {
 	assets: new Set(["app-icon.png"]),
 	mimeTypes: {".png":"image/png"},
 	_: {
-		client: {start:"_app/immutable/entry/start.C90cIe8O.js",app:"_app/immutable/entry/app.BI3IkS95.js",imports:["_app/immutable/entry/start.C90cIe8O.js","_app/immutable/chunks/DpT57jYz.js","_app/immutable/chunks/DYOPpNGh.js","_app/immutable/entry/app.BI3IkS95.js","_app/immutable/chunks/DYOPpNGh.js","_app/immutable/chunks/xihTtKlq.js"],stylesheets:[],fonts:[],uses_env_dynamic_public:false},
+		client: {start:"_app/immutable/entry/start.DSr2P0G3.js",app:"_app/immutable/entry/app.Bym-gbqX.js",imports:["_app/immutable/entry/start.DSr2P0G3.js","_app/immutable/chunks/QKlpYJKZ.js","_app/immutable/chunks/TbA9eWsB.js","_app/immutable/entry/app.Bym-gbqX.js","_app/immutable/chunks/TbA9eWsB.js","_app/immutable/chunks/xihTtKlq.js"],stylesheets:[],fonts:[],uses_env_dynamic_public:false},
 		nodes: [
 			__memo(() => import('./nodes/0.js')),
 			__memo(() => import('./nodes/1.js')),

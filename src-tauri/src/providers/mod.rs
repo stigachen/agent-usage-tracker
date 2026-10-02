@@ -1,3 +1,4 @@
+pub mod codex;
 pub mod copilot;
 
 use async_trait::async_trait;
@@ -26,6 +27,9 @@ pub struct UsageSnapshot {
     pub windows: Vec<UsageWindow>,
     pub error: Option<String>,
     pub needs_auth: bool,
+    /// Credentials are owned by another tool (e.g. Codex CLI); the app can't sign in or out.
+    pub managed: bool,
+    pub login_hint: Option<String>,
     pub fetched_at: String,
 }
 
@@ -40,6 +44,8 @@ impl UsageSnapshot {
             windows: vec![],
             error: None,
             needs_auth: false,
+            managed: false,
+            login_hint: p.login_hint().map(Into::into),
             fetched_at: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -74,6 +80,14 @@ pub struct Credential {
 pub trait Provider: Send + Sync {
     fn id(&self) -> &'static str;
     fn name(&self) -> &'static str;
+    /// Shown instead of a sign-in button for providers that can't log in from the app.
+    fn login_hint(&self) -> Option<&'static str> {
+        None
+    }
+    /// Accounts found on this machine (e.g. a CLI's credential file). Not persisted.
+    fn discover(&self) -> Vec<Credential> {
+        vec![]
+    }
     async fn fetch(&self, http: &reqwest::Client, account_id: &str, secret: &str) -> UsageSnapshot;
     async fn start_login(&self, http: &reqwest::Client) -> Result<DeviceCode, String>;
     /// Polls until the user authorizes.
@@ -81,5 +95,5 @@ pub trait Provider: Send + Sync {
 }
 
 pub fn registry() -> Vec<Box<dyn Provider>> {
-    vec![Box::new(copilot::Copilot)]
+    vec![Box::new(copilot::Copilot), Box::new(codex::Codex)]
 }

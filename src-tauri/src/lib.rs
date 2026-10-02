@@ -43,6 +43,13 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
     let mut snaps = Vec::new();
     // Fetches sequentially; fine for a handful of accounts and avoids the `futures` crate.
     for p in &state.providers {
+        let discovered = p.discover();
+        if !discovered.is_empty() {
+            for c in discovered {
+                snaps.push(p.fetch(&state.http, &c.account_id, &c.secret).await);
+            }
+            continue;
+        }
         let mine: Vec<_> = accounts.iter().filter(|a| a.provider == p.id()).collect();
         if mine.is_empty() {
             let mut s = UsageSnapshot::empty(p.as_ref(), None);

@@ -14,6 +14,8 @@ export interface UsageSnapshot {
   windows: UsageWindow[];
   error: string | null;
   needsAuth: boolean;
+  managed: boolean;
+  loginHint: string | null;
   fetchedAt: string;
 }
 

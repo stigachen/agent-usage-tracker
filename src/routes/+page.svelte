@@ -4,6 +4,8 @@
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import ProviderCard from "$lib/ProviderCard.svelte";
+  import Overview from "$lib/Overview.svelte";
+  import ProviderIcon from "$lib/ProviderIcon.svelte";
   import Settings from "$lib/Settings.svelte";
   import type { UsageSnapshot } from "$lib/types";
 
@@ -21,6 +23,13 @@
       }, {}),
     ),
   );
+  let tab = $state("overview");
+  let tabs = $derived([
+    { id: "overview", name: "Overview" },
+    ...groups.map((g) => ({ id: g[0].providerId, name: g[0].providerName })),
+  ]);
+  let activeGroup = $derived(groups.find((g) => g[0].providerId === tab));
+
   // Ticks once a minute so relative times stay fresh while the panel is open.
   let now = $state(Date.now());
   let updated = $derived(snaps[0] ? new Date(snaps[0].fetchedAt).getTime() : null);
@@ -95,11 +104,26 @@
     </div>
   </div>
 
+  {#if loaded}
+    <div class="tabs" role="tablist">
+      {#each tabs as t (t.id)}
+        <button role="tab" class="tab" class:active={tab === t.id} aria-selected={tab === t.id} onclick={() => (tab = t.id)}>
+          <ProviderIcon id={t.id} size={13} />
+          <span>{t.name}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <div class="list">
     {#if loaded}
-      {#each groups as g (g[0].providerId)}
-        <ProviderCard snaps={g} {now} />
-      {/each}
+      {#if tab === "overview" || !activeGroup}
+        <Overview {snaps} {now} onselect={(id) => (tab = id)} />
+      {:else}
+        {#key tab}
+          <ProviderCard snaps={activeGroup} {now} />
+        {/key}
+      {/if}
     {:else}
       <div class="skeleton">
         <div class="sk-row"><div class="sk sk-logo"></div><div class="sk sk-line w40"></div></div>
@@ -120,14 +144,14 @@
   :global(:root) {
     --fg: #1d1d1f; --muted: #86868b; --card: rgba(255,255,255,0.55);
     --border: rgba(0,0,0,0.06); --track: rgba(0,0,0,0.08); --chip: rgba(0,0,0,0.05);
-    --accent: #0a84ff; --border-strong: rgba(0,0,0,0.18);
+    --accent: #0a84ff; --border-strong: rgba(0,0,0,0.18); --tab-active: rgba(255,255,255,0.9);
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :global(:root) {
       --fg: #f5f5f7; --muted: #98989d; --card: rgba(255,255,255,0.06);
       --border: rgba(255,255,255,0.08); --track: rgba(255,255,255,0.1); --chip: rgba(255,255,255,0.08);
-      --border-strong: rgba(255,255,255,0.22);
+      --border-strong: rgba(255,255,255,0.22); --tab-active: rgba(255,255,255,0.14);
     }
   }
   :global(html, body) {
@@ -136,6 +160,16 @@
     -webkit-font-smoothing: antialiased; user-select: none; cursor: default; overflow: hidden;
   }
   main { max-height: 600px; box-sizing: border-box; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .tabs {
+    display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--chip);
+  }
+  .tab {
+    all: unset; flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-size: 11.5px; font-weight: 500; color: var(--muted); padding: 5px 6px; border-radius: 7px;
+    cursor: pointer; transition: background 0.18s, color 0.18s, box-shadow 0.18s; white-space: nowrap;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active { background: var(--tab-active); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
   .actions { display: flex; gap: 6px; }
   .top { display: flex; justify-content: space-between; align-items: center; }
   h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
