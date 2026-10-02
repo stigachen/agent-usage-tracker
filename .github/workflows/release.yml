@@ -45,3 +45,19 @@ jobs:
           releaseName: Agent Usage v__VERSION__
           releaseDraft: true
           args: --target universal-apple-darwin --bundles app,dmg
+
+      # tauri-action notarizes the .app but not the dmg wrapping it.
+      - name: Notarize and staple dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          TAG=$(gh release list --json tagName,isDraft,name -q '[.[] | select(.isDraft)][0].tagName')
+          # tauri-action uploads with dots for spaces in the asset name.
+          cp "$DMG" "$(basename "$DMG" | tr ' ' '.')"
+          gh release upload "$TAG" "$(basename "$DMG" | tr ' ' '.')" --clobber
