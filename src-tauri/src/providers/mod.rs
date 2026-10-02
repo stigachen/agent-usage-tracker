@@ -19,6 +19,8 @@ pub struct UsageWindow {
 pub struct UsageSnapshot {
     pub provider_id: String,
     pub provider_name: String,
+    /// None for the placeholder snapshot of a provider with no accounts yet.
+    pub account_id: Option<String>,
     pub account: Option<String>,
     pub plan: Option<String>,
     pub windows: Vec<UsageWindow>,
@@ -28,11 +30,12 @@ pub struct UsageSnapshot {
 }
 
 impl UsageSnapshot {
-    pub fn empty(p: &dyn Provider) -> Self {
+    pub fn empty(p: &dyn Provider, account_id: Option<&str>) -> Self {
         Self {
             provider_id: p.id().into(),
             provider_name: p.name().into(),
-            account: None,
+            account_id: account_id.map(Into::into),
+            account: account_id.map(Into::into),
             plan: None,
             windows: vec![],
             error: None,
@@ -41,12 +44,13 @@ impl UsageSnapshot {
         }
     }
 
-    /// Highest used/limit ratio across limited windows, in 0..=1.
-    pub fn max_ratio(&self) -> Option<f64> {
+    /// Lowest remaining ratio across limited windows, in 0..=1.
+    /// Matches the big number shown on the card.
+    pub fn min_remaining(&self) -> Option<f64> {
         self.windows
             .iter()
-            .filter_map(|w| w.limit.filter(|l| *l > 0.0).map(|l| w.used / l))
-            .reduce(f64::max)
+            .filter_map(|w| w.limit.filter(|l| *l > 0.0).map(|l| (1.0 - w.used / l).clamp(0.0, 1.0)))
+            .reduce(f64::min)
     }
 }
 
@@ -59,21 +63,23 @@ pub struct DeviceCode {
     pub interval: u64,
 }
 
+/// Result of a successful login: a stable account id (e.g. GitHub login) and its secret.
+pub struct Credential {
+    pub account_id: String,
+    pub secret: String,
+}
+
+/// Providers are stateless; credential storage is handled by the app.
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn id(&self) -> &'static str;
     fn name(&self) -> &'static str;
-    async fn fetch(&self, http: &reqwest::Client) -> UsageSnapshot;
+    async fn fetch(&self, http: &reqwest::Client, account_id: &str, secret: &str) -> UsageSnapshot;
     async fn start_login(&self, http: &reqwest::Client) -> Result<DeviceCode, String>;
-    /// Polls until the user authorizes, then stores the credential.
-    async fn finish_login(&self, http: &reqwest::Client, code: DeviceCode) -> Result<(), String>;
-    fn logout(&self) -> Result<(), String>;
+    /// Polls until the user authorizes.
+    async fn finish_login(&self, http: &reqwest::Client, code: DeviceCode) -> Result<Credential, String>;
 }
 
 pub fn registry() -> Vec<Box<dyn Provider>> {
     vec![Box::new(copilot::Copilot)]
-}
-
-pub(crate) fn keyring_entry(provider: &str) -> keyring::Result<keyring::Entry> {
-    keyring::Entry::new("com.stigachen.agentusage", provider)
 }

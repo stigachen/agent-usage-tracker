@@ -1,6 +1,8 @@
 mod providers;
+mod store;
 
 use providers::{DeviceCode, Provider, UsageSnapshot};
+use store::{AccountRef, Store, TrayDisplay};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{
@@ -16,6 +18,7 @@ struct AppState {
     http: reqwest::Client,
     providers: Vec<Box<dyn Provider>>,
     snapshots: RwLock<Vec<UsageSnapshot>>,
+    store: RwLock<Store>,
     interval_secs: RwLock<u64>,
     wake: Notify,
 }
@@ -33,31 +36,71 @@ impl AppState {
 }
 
 async fn refresh_all(app: &AppHandle, state: &AppState) {
-    let futs = state.providers.iter().map(|p| p.fetch(&state.http));
-    let snaps = fetch_each(futs).await;
-    update_tray(app, &snaps);
+    let accounts = state.store.read().await.config.accounts.clone();
+    let mut snaps = Vec::new();
+    // Fetches sequentially; fine for a handful of accounts and avoids the `futures` crate.
+    for p in &state.providers {
+        let mine: Vec<_> = accounts.iter().filter(|a| a.provider == p.id()).collect();
+        if mine.is_empty() {
+            let mut s = UsageSnapshot::empty(p.as_ref(), None);
+            s.needs_auth = true;
+            snaps.push(s);
+        }
+        for a in mine {
+            let snap = match store::get_secret(&a.provider, &a.id) {
+                Some(secret) => p.fetch(&state.http, &a.id, &secret).await,
+                None => {
+                    let mut s = UsageSnapshot::empty(p.as_ref(), Some(&a.id));
+                    s.needs_auth = true;
+                    s
+                }
+            };
+            snaps.push(snap);
+        }
+    }
+    let display = state.store.read().await.config.tray_display.clone();
+    update_tray(app, &snaps, &display);
     *state.snapshots.write().await = snaps.clone();
     let _ = app.emit("usage-updated", snaps);
 }
 
-// Fetches sequentially; fine for a handful of providers and avoids the `futures` crate.
-async fn fetch_each<F: std::future::Future>(futs: impl Iterator<Item = F>) -> Vec<F::Output> {
-    let handles: Vec<_> = futs.collect();
-    let mut out = Vec::with_capacity(handles.len());
-    for f in handles {
-        out.push(f.await);
+/// Moves tokens saved before multi-account support to `<provider>:<login>`.
+async fn migrate_legacy(state: &AppState) {
+    for p in &state.providers {
+        let Some(secret) = store::take_legacy_secret(p.id()) else { continue };
+        let snap = p.fetch(&state.http, "", &secret).await;
+        let Some(login) = snap.account.filter(|a| !a.is_empty()) else { continue };
+        if store::set_secret(p.id(), &login, &secret).is_ok() {
+            add_account(state, p.id(), &login).await;
+        }
     }
-    out
 }
 
-fn update_tray(app: &AppHandle, snaps: &[UsageSnapshot]) {
+async fn add_account(state: &AppState, provider: &str, id: &str) {
+    let mut st = state.store.write().await;
+    let acc = AccountRef { provider: provider.into(), id: id.into() };
+    if !st.config.accounts.contains(&acc) {
+        st.config.accounts.push(acc);
+        let _ = st.save();
+    }
+}
+
+fn tray_title(snaps: &[UsageSnapshot], display: &TrayDisplay) -> Option<String> {
+    let remaining = match display {
+        TrayDisplay::IconOnly => None,
+        TrayDisplay::Lowest => snaps.iter().filter_map(|s| s.min_remaining()).reduce(f64::min),
+        TrayDisplay::Pinned { provider, account } => snaps
+            .iter()
+            .find(|s| &s.provider_id == provider && s.account_id.as_deref() == Some(account))
+            .and_then(|s| s.min_remaining()),
+    };
+    // Floor so the tray never rounds up past the card's big number.
+    remaining.map(|r| format!("{:.0}%", (r * 100.0).floor()))
+}
+
+fn update_tray(app: &AppHandle, snaps: &[UsageSnapshot], display: &TrayDisplay) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
-    let title = snaps
-        .iter()
-        .filter_map(|s| s.max_ratio())
-        .reduce(f64::max)
-        .map(|r| format!("{:.0}%", r * 100.0));
-    let _ = tray.set_title(title.as_deref());
+    let _ = tray.set_title(tray_title(snaps, display).as_deref());
 }
 
 fn toggle_panel(app: &AppHandle) {
@@ -95,15 +138,45 @@ async fn finish_login(
     provider: String,
     code: DeviceCode,
 ) -> Result<(), String> {
-    state.provider(&provider)?.finish_login(&state.http, code).await?;
+    let cred = state.provider(&provider)?.finish_login(&state.http, code).await?;
+    store::set_secret(&provider, &cred.account_id, &cred.secret)?;
+    add_account(&state, &provider, &cred.account_id).await;
     state.wake.notify_one();
     Ok(())
 }
 
 #[tauri::command]
-fn logout(state: State<'_, Shared>, provider: String) -> Result<(), String> {
-    state.provider(&provider)?.logout()?;
+async fn logout(state: State<'_, Shared>, provider: String, account: String) -> Result<(), String> {
+    store::delete_secret(&provider, &account)?;
+    {
+        let mut st = state.store.write().await;
+        st.config.accounts.retain(|a| !(a.provider == provider && a.id == account));
+        if matches!(&st.config.tray_display, TrayDisplay::Pinned { provider: p, account: a } if *p == provider && *a == account) {
+            st.config.tray_display = TrayDisplay::Lowest;
+        }
+        st.save()?;
+    }
     state.wake.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_tray_display(state: State<'_, Shared>) -> Result<TrayDisplay, ()> {
+    Ok(state.store.read().await.config.tray_display.clone())
+}
+
+#[tauri::command]
+async fn set_tray_display(
+    app: AppHandle,
+    state: State<'_, Shared>,
+    display: TrayDisplay,
+) -> Result<(), String> {
+    {
+        let mut st = state.store.write().await;
+        st.config.tray_display = display.clone();
+        st.save()?;
+    }
+    update_tray(&app, &state.snapshots.read().await, &display);
     Ok(())
 }
 
@@ -133,31 +206,35 @@ fn quit(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let state: Shared = Arc::new(AppState {
+    let make_state = |dir: std::path::PathBuf| -> Shared { Arc::new(AppState {
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
             .expect("http client"),
         providers: providers::registry(),
         snapshots: RwLock::new(vec![]),
+        store: RwLock::new(Store::load(dir)),
         interval_secs: RwLock::new(600),
         wake: Notify::new(),
-    });
+    }) };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
-        .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshots,
             refresh,
             start_login,
             finish_login,
             logout,
+            get_tray_display,
+            set_tray_display,
             set_interval,
             open_url,
             quit
         ])
         .setup(move |app| {
+            let state = make_state(app.path().app_config_dir()?);
+            app.manage(state.clone());
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -195,6 +272,7 @@ pub fn run() {
             // Background refresh loop: sleeps until the interval elapses or someone pokes `wake`.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                migrate_legacy(&state).await;
                 loop {
                     refresh_all(&handle, &state).await;
                     let secs = *state.interval_secs.read().await;

@@ -8,6 +8,7 @@ export interface UsageWindow {
 export interface UsageSnapshot {
   providerId: string;
   providerName: string;
+  accountId: string | null;
   account: string | null;
   plan: string | null;
   windows: UsageWindow[];

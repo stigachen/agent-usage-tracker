@@ -1,4 +1,4 @@
-use super::{keyring_entry, DeviceCode, Provider, UsageSnapshot, UsageWindow};
+use super::{Credential, DeviceCode, Provider, UsageSnapshot, UsageWindow};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::time::Duration;
@@ -40,8 +40,9 @@ fn label(id: &str) -> String {
     }
 }
 
-fn token() -> Option<String> {
-    keyring_entry("copilot").ok()?.get_password().ok()
+#[derive(Deserialize)]
+struct GhUser {
+    login: String,
 }
 
 #[async_trait]
@@ -53,12 +54,8 @@ impl Provider for Copilot {
         "GitHub Copilot"
     }
 
-    async fn fetch(&self, http: &reqwest::Client) -> UsageSnapshot {
-        let mut snap = UsageSnapshot::empty(self);
-        let Some(tok) = token() else {
-            snap.needs_auth = true;
-            return snap;
-        };
+    async fn fetch(&self, http: &reqwest::Client, account_id: &str, tok: &str) -> UsageSnapshot {
+        let mut snap = UsageSnapshot::empty(self, Some(account_id));
         let res = http
             .get("https://api.github.com/copilot_internal/user")
             .header("Authorization", format!("token {tok}"))
@@ -90,7 +87,7 @@ impl Provider for Copilot {
                 return snap;
             }
         };
-        snap.account = body.login;
+        snap.account = body.login.or(snap.account);
         snap.plan = body.copilot_plan;
         let mut quotas: Vec<_> = body.quota_snapshots.unwrap_or_default().into_iter().collect();
         // Limited quotas first, premium on top.
@@ -134,7 +131,7 @@ impl Provider for Copilot {
         })
     }
 
-    async fn finish_login(&self, http: &reqwest::Client, code: DeviceCode) -> Result<(), String> {
+    async fn finish_login(&self, http: &reqwest::Client, code: DeviceCode) -> Result<Credential, String> {
         let mut interval = code.interval.max(5);
         for _ in 0..180 {
             tokio::time::sleep(Duration::from_secs(interval)).await;
@@ -154,9 +151,18 @@ impl Provider for Copilot {
                 .await
                 .map_err(|e| e.to_string())?;
             if let Some(tok) = r.access_token {
-                return keyring_entry("copilot")
-                    .and_then(|e| e.set_password(&tok))
-                    .map_err(|e| e.to_string());
+                let user: GhUser = http
+                    .get("https://api.github.com/user")
+                    .header("Authorization", format!("token {tok}"))
+                    .header("User-Agent", UA)
+                    .send()
+                    .await
+                    .and_then(|r| r.error_for_status())
+                    .map_err(|e| e.to_string())?
+                    .json()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                return Ok(Credential { account_id: user.login, secret: tok });
             }
             match r.error.as_deref() {
                 Some("authorization_pending") => {}
@@ -166,12 +172,5 @@ impl Provider for Copilot {
             }
         }
         Err("login timed out".into())
-    }
-
-    fn logout(&self) -> Result<(), String> {
-        match keyring_entry("copilot").and_then(|e| e.delete_credential()) {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
     }
 }

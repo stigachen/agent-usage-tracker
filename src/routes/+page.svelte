@@ -11,6 +11,14 @@
   let mainEl: HTMLElement;
   let refreshing = $state(false);
   let loaded = $state(false);
+  let groups = $derived(
+    Object.values(
+      snaps.reduce<Record<string, UsageSnapshot[]>>((g, s) => {
+        (g[s.providerId] ??= []).push(s);
+        return g;
+      }, {}),
+    ),
+  );
   // Ticks once a minute so relative times stay fresh while the panel is open.
   let now = $state(Date.now());
   let updated = $derived(snaps[0] ? new Date(snaps[0].fetchedAt).getTime() : null);
@@ -76,8 +84,8 @@
 
   <div class="list">
     {#if loaded}
-      {#each snaps as snap (snap.providerId)}
-        <ProviderCard {snap} {now} />
+      {#each groups as g (g[0].providerId)}
+        <ProviderCard snaps={g} {now} />
       {/each}
     {:else}
       <div class="skeleton">

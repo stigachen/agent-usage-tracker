@@ -9,6 +9,10 @@ function _page($$renderer, $$props) {
 	$$renderer.component(($$renderer) => {
 		let snaps = [];
 		let refreshing = false;
+		derived(() => Object.values(snaps.reduce((g, s) => {
+			(g[s.providerId] ??= []).push(s);
+			return g;
+		}, {})));
 		let now = Date.now();
 		let updated = derived(() => snaps[0] ? new Date(snaps[0].fetchedAt).getTime() : null);
 		let updatedText = derived(() => {
