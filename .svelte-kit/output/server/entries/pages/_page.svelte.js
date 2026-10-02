@@ -3,6 +3,7 @@ import { i as ensure_array_like, r as derived, t as attr_class, v as attr, y as 
 import { invoke } from "@tauri-apps/api/core";
 import "@tauri-apps/api/event";
 import "@tauri-apps/api/window";
+import "@tauri-apps/api/app";
 import "@tauri-apps/plugin-autostart";
 //#endregion
 //#region src/lib/Settings.svelte
@@ -14,6 +15,7 @@ function Settings($$renderer, $$props) {
 		let autostart = false;
 		let confirming = null;
 		let error = null;
+		let version = "";
 		let accounts = derived(() => snaps.filter((s) => s.accountId));
 		const key = (s) => `${s.providerId}:${s.accountId}`;
 		const intervals = [
@@ -96,7 +98,7 @@ function Settings($$renderer, $$props) {
 				$$renderer.push(`<div class="row svelte-lqmuci"><span class="acc svelte-lqmuci"><span>@${escape_html(s.account)}</span> <span class="muted svelte-lqmuci">${escape_html(s.providerName)}</span></span> <button${attr_class("danger svelte-lqmuci", void 0, { "armed": confirming === key(s) })}>${escape_html(confirming === key(s) ? "Sign out?" : "Sign out")}</button></div>`);
 			}
 		} else $$renderer.push(`<!--[!--><div class="row muted svelte-lqmuci">No accounts yet</div>`);
-		$$renderer.push(`<!--]--></div></section> `);
+		$$renderer.push(`<!--]--></div></section> <section class="svelte-lqmuci"><h3 class="svelte-lqmuci">About</h3> <div class="group svelte-lqmuci"><div class="about svelte-lqmuci"><img src="/app-icon.png" alt="" width="44" height="44" class="svelte-lqmuci"/> <div class="about-text svelte-lqmuci"><span class="name svelte-lqmuci">Agent Usage</span> <span class="muted svelte-lqmuci">Version ${escape_html(version)}</span> <span class="muted svelte-lqmuci">Usage and quota for your coding agents</span></div></div> <div class="row svelte-lqmuci"><span class="muted svelte-lqmuci">© 2026 Guang Chen</span> <button class="link svelte-lqmuci">GitHub ↗</button></div></div></section> `);
 		if (error) $$renderer.push(`<!--[0--><p class="error svelte-lqmuci">${escape_html(error)}</p>`);
 		else $$renderer.push("<!--[-1-->");
 		$$renderer.push(`<!--]--></div>`);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getVersion } from "@tauri-apps/api/app";
   import { invoke } from "@tauri-apps/api/core";
   import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
   import { onMount } from "svelte";
@@ -12,6 +13,8 @@
   let autostart = $state(false);
   let confirming = $state<string | null>(null);
   let error = $state<string | null>(null);
+  let version = $state("");
+  const REPO = "https://github.com/stigachen/agent-usage-tracker";
 
   let accounts = $derived(snaps.filter((s) => s.accountId));
   const key = (s: UsageSnapshot) => `${s.providerId}:${s.accountId}`;
@@ -25,6 +28,7 @@
   ] as const;
 
   onMount(async () => {
+    getVersion().then((v) => (version = v));
     const [d, secs, auto] = await Promise.all([
       invoke<TrayDisplay>("get_tray_display"),
       invoke<number>("get_refresh_secs"),
@@ -143,6 +147,24 @@
     </div>
   </section>
 
+  <section>
+    <h3>About</h3>
+    <div class="group">
+      <div class="about">
+        <img src="/app-icon.png" alt="" width="44" height="44" />
+        <div class="about-text">
+          <span class="name">Agent Usage</span>
+          <span class="muted">Version {version}</span>
+          <span class="muted">Usage and quota for your coding agents</span>
+        </div>
+      </div>
+      <div class="row">
+        <span class="muted">© 2026 Guang Chen</span>
+        <button class="link" onclick={() => invoke("open_url", { url: REPO })}>GitHub ↗</button>
+      </div>
+    </div>
+  </section>
+
   {#if error}<p class="error">{error}</p>{/if}
 </div>
 
@@ -190,5 +212,12 @@
     background: var(--chip); color: #ff453a; cursor: pointer; transition: all 0.15s;
   }
   .danger.armed { background: #ff453a; color: white; }
+  .about { display: flex; align-items: center; gap: 12px; padding: 12px; }
+  .about img { border-radius: 10px; }
+  .about-text { display: flex; flex-direction: column; gap: 1px; font-size: 11px; }
+  .name { font-size: 13px; font-weight: 600; }
+  .link {
+    border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; padding: 0;
+  }
   .error { color: #ff453a; font-size: 12px; margin: 0 4px; }
 </style>
