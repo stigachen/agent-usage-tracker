@@ -14,6 +14,10 @@ use tokio::sync::{Notify, RwLock};
 
 const TRAY_ID: &str = "main";
 
+/// When the panel was last hidden by losing focus. Clicking the tray icon blurs the
+/// panel before the click event arrives, so without this the click would reopen it.
+static LAST_BLUR_HIDE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
 struct AppState {
     http: reqwest::Client,
     providers: Vec<Box<dyn Provider>>,
@@ -104,9 +108,14 @@ fn update_tray(app: &AppHandle, snaps: &[UsageSnapshot], display: &TrayDisplay) 
 
 fn toggle_panel(app: &AppHandle) {
     let Some(win) = app.get_webview_window("main") else { return };
+    let just_hidden = LAST_BLUR_HIDE
+        .lock()
+        .unwrap()
+        .take()
+        .is_some_and(|t| t.elapsed() < Duration::from_millis(300));
     if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
-    } else {
+    } else if !just_hidden {
         let _ = win.move_window(Position::TrayCenter);
         let _ = win.show();
         let _ = win.set_focus();
@@ -298,6 +307,7 @@ pub fn run() {
         })
         .on_window_event(|win, event| {
             if let WindowEvent::Focused(false) = event {
+                *LAST_BLUR_HIDE.lock().unwrap() = Some(std::time::Instant::now());
                 let _ = win.hide();
             }
         })
