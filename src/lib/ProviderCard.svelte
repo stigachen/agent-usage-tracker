@@ -17,6 +17,8 @@
     return d > 0 ? `Resets in ${d}d ${h}h` : `Resets in ${h}h`;
   }
 
+  const prettyPlan = (p: string) => p.replace(/_/g, " ");
+
   function tone(r: number) {
     return r >= 0.9 ? "danger" : r >= 0.7 ? "warn" : "ok";
   }
@@ -45,7 +47,7 @@
     </div>
     <div class="title">
       <h2>{snap.providerName}</h2>
-      {#if snap.account}<span class="sub">@{snap.account}{snap.plan ? ` · ${snap.plan}` : ""}</span>{/if}
+      {#if snap.account}<span class="sub">@{snap.account}{snap.plan ? ` · ${prettyPlan(snap.plan)}` : ""}</span>{/if}
     </div>
   </header>
 

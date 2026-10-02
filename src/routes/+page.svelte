@@ -1,11 +1,14 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import ProviderCard from "$lib/ProviderCard.svelte";
   import type { UsageSnapshot } from "$lib/types";
 
+  const MAX_HEIGHT = 600;
   let snaps = $state<UsageSnapshot[]>([]);
+  let mainEl: HTMLElement;
   let refreshing = $state(false);
   let updated = $derived(snaps[0] ? new Date(snaps[0].fetchedAt) : null);
 
@@ -18,7 +21,17 @@
       }),
       listen("panel-shown", () => (refreshing = true)),
     ];
-    return () => un.forEach((p) => p.then((f) => f()));
+    // Fit the window to its content so there is no empty space below the cards.
+    const win = getCurrentWindow();
+    const ro = new ResizeObserver(() => {
+      const h = Math.min(Math.ceil(mainEl.scrollHeight), MAX_HEIGHT);
+      win.setSize(new LogicalSize(360, h));
+    });
+    ro.observe(mainEl);
+    return () => {
+      ro.disconnect();
+      un.forEach((p) => p.then((f) => f()));
+    };
   });
 
   function refresh() {
@@ -27,7 +40,7 @@
   }
 </script>
 
-<main>
+<main bind:this={mainEl}>
   <div class="top">
     <h1>Agent Usage</h1>
     <button class="icon" class:spin={refreshing} onclick={refresh} title="Refresh" aria-label="Refresh">
@@ -67,10 +80,10 @@
     font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased; user-select: none; cursor: default; overflow: hidden;
   }
-  main { height: 100%; box-sizing: border-box; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  main { max-height: 600px; box-sizing: border-box; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   .top { display: flex; justify-content: space-between; align-items: center; }
   h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
-  .list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .list { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
   .icon {
     border: 0; background: var(--chip); color: var(--fg); width: 26px; height: 26px;
     border-radius: 7px; display: grid; place-items: center; cursor: pointer;

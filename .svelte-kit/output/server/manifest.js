@@ -10,7 +10,7 @@ return {
 	assets: new Set(["favicon.png"]),
 	mimeTypes: {".png":"image/png"},
 	_: {
-		client: {start:"_app/immutable/entry/start.rgk1_ciz.js",app:"_app/immutable/entry/app.Co7DtvTi.js",imports:["_app/immutable/entry/start.rgk1_ciz.js","_app/immutable/chunks/B0iQyaVy.js","_app/immutable/chunks/DQrPjCmc.js","_app/immutable/entry/app.Co7DtvTi.js","_app/immutable/chunks/DQrPjCmc.js","_app/immutable/chunks/xihTtKlq.js"],stylesheets:[],fonts:[],uses_env_dynamic_public:false},
+		client: {start:"_app/immutable/entry/start.eR19wQp_.js",app:"_app/immutable/entry/app.Bw_Nkg_l.js",imports:["_app/immutable/entry/start.eR19wQp_.js","_app/immutable/chunks/BDqjnBKI.js","_app/immutable/chunks/DQrPjCmc.js","_app/immutable/entry/app.Bw_Nkg_l.js","_app/immutable/chunks/DQrPjCmc.js","_app/immutable/chunks/xihTtKlq.js"],stylesheets:[],fonts:[],uses_env_dynamic_public:false},
 		nodes: [
 			__memo(() => import('./nodes/0.js')),
 			__memo(() => import('./nodes/1.js')),
