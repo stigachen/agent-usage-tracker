@@ -53,6 +53,7 @@ declare module '$env/static/private' {
 	export const LOGNAME: string;
 	export const ANTHROPIC_BASE_URL: string;
 	export const SHLVL: string;
+	export const pnpm_config_verify_deps_before_run: string;
 	export const STARSHIP_SESSION_KEY: string;
 	export const npm_package_json: string;
 	export const CLAUDE_CODE_SESSION_ATTENDED: string;
@@ -68,7 +69,7 @@ declare module '$env/static/private' {
 	export const CLAUDE_CODE_AUTO_COMPACT_WINDOW: string;
 	export const TAURI_ENV_FAMILY: string;
 	export const PATH: string;
-	export const pnpm_config_verify_deps_before_run: string;
+	export const CLAUDE_CODE_SUBAGENT_MODEL: string;
 	export const TAURI_ENV_PLATFORM_VERSION: string;
 	export const __CF_USER_TEXT_ENCODING: string;
 	export const mount_authenticator_shm: string;
@@ -210,6 +211,7 @@ declare module '$env/dynamic/private' {
 		LOGNAME: string;
 		ANTHROPIC_BASE_URL: string;
 		SHLVL: string;
+		pnpm_config_verify_deps_before_run: string;
 		STARSHIP_SESSION_KEY: string;
 		npm_package_json: string;
 		CLAUDE_CODE_SESSION_ATTENDED: string;
@@ -225,7 +227,7 @@ declare module '$env/dynamic/private' {
 		CLAUDE_CODE_AUTO_COMPACT_WINDOW: string;
 		TAURI_ENV_FAMILY: string;
 		PATH: string;
-		pnpm_config_verify_deps_before_run: string;
+		CLAUDE_CODE_SUBAGENT_MODEL: string;
 		TAURI_ENV_PLATFORM_VERSION: string;
 		__CF_USER_TEXT_ENCODING: string;
 		mount_authenticator_shm: string;

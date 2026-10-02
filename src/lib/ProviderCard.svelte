@@ -137,6 +137,12 @@
           <span class="muted small">{snap.error}</span>
         </div>
       {:else}
+        {#if snap.note}
+          <div class="hint">
+            {snap.note}
+            {#if snap.periodEndsAt}<br /><span class="small">Period {resetIn(snap.periodEndsAt).toLowerCase()}</span>{/if}
+          </div>
+        {/if}
         {#if q.hero}
           {@const r = Math.min(q.hero.used / q.hero.limit!, 1)}
           <div class="hero">

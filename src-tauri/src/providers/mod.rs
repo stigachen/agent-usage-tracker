@@ -1,5 +1,6 @@
 pub mod codex;
 pub mod copilot;
+pub mod grok;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,10 @@ pub struct UsageSnapshot {
     /// Credentials are owned by another tool (e.g. Codex CLI); the app can't sign in or out.
     pub managed: bool,
     pub login_hint: Option<String>,
+    /// Informational message when there is data but no usable windows.
+    pub note: Option<String>,
+    /// End of the current billing period when no window carries it.
+    pub period_ends_at: Option<String>,
     pub fetched_at: String,
 }
 
@@ -46,6 +51,8 @@ impl UsageSnapshot {
             needs_auth: false,
             managed: false,
             login_hint: p.login_hint().map(Into::into),
+            note: None,
+            period_ends_at: None,
             fetched_at: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -95,5 +102,5 @@ pub trait Provider: Send + Sync {
 }
 
 pub fn registry() -> Vec<Box<dyn Provider>> {
-    vec![Box::new(copilot::Copilot), Box::new(codex::Codex)]
+    vec![Box::new(copilot::Copilot), Box::new(codex::Codex), Box::new(grok::Grok)]
 }

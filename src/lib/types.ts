@@ -16,6 +16,8 @@ export interface UsageSnapshot {
   needsAuth: boolean;
   managed: boolean;
   loginHint: string | null;
+  note: string | null;
+  periodEndsAt: string | null;
   fetchedAt: string;
 }
 

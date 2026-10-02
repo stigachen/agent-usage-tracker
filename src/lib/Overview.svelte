@@ -47,6 +47,8 @@
         {:else if worst && left !== null}
           <div class="bar"><div class="fill {tone(left)}" style:width="{Math.max(100 - left, 1.5)}%"></div></div>
           <span class="muted small">{worst.label}{worst.resetsAt ? ` · resets in ${resetIn(worst.resetsAt)}` : ""}</span>
+        {:else if s.note}
+          <span class="muted small">No usage data</span>
         {:else}
           <span class="muted small">Unlimited</span>
         {/if}

@@ -13,6 +13,11 @@
       <path d="M12 12 L12 4.5 a3.6 3.6 0 0 1 6.2 2.1 L15.5 11" transform="rotate({a} 12 12)" />
     {/each}
   </svg>
+{:else if id === "grok"}
+  <!-- Simplified xAI-style slash mark. -->
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+    <path d="M5 19 19 5" /><path d="M5 5l5.5 5.5" /><path d="M13.5 13.5 19 19" />
+  </svg>
 {:else if id === "overview"}
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
     <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.8" />
