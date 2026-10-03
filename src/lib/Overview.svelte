@@ -3,8 +3,12 @@
   import ProviderIcon from "./ProviderIcon.svelte";
   import type { UsageSnapshot } from "./types";
 
-  let { snaps, now, onselect }: { snaps: UsageSnapshot[]; now: number; onselect: (id: string) => void } =
-    $props();
+  let {
+    snaps,
+    more = [],
+    now,
+    onselect,
+  }: { snaps: UsageSnapshot[]; more?: UsageSnapshot[]; now: number; onselect: (id: string) => void } = $props();
 
   // One row per account; providers without accounts get a placeholder row.
   let rows = $derived(
@@ -60,7 +64,25 @@
   {/each}
 </div>
 
+{#if more.length}
+  <div class="more">
+    <span class="muted small">Connect</span>
+    {#each more as s (s.providerId)}
+      <button class="chip" onclick={() => onselect(s.providerId)}>
+        <ProviderIcon id={s.providerId} size={12} />{s.providerName}
+      </button>
+    {/each}
+  </div>
+{/if}
+
 <style>
+  .more { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 2px; }
+  .chip {
+    all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--muted); padding: 3px 8px; border-radius: 99px; background: var(--chip);
+    transition: color 0.15s;
+  }
+  .chip:hover { color: var(--fg); }
   .list {
     background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
   }

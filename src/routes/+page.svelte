@@ -23,11 +23,16 @@
       }, {}),
     ),
   );
+  // A provider is connected once it has an account, even an expired one; a snapshot
+  // without accountId is only the "no accounts yet" placeholder.
+  let connected = $derived(groups.filter((g) => g.some((s) => s.accountId)));
+  let unconnected = $derived(groups.filter((g) => !g.some((s) => s.accountId)).map((g) => g[0]));
   let tab = $state("overview");
   let tabs = $derived([
     { id: "overview", name: "Overview" },
-    ...groups.map((g) => ({ id: g[0].providerId, name: g[0].providerName })),
+    ...connected.map((g) => ({ id: g[0].providerId, name: g[0].providerName })),
   ]);
+  // Unconnected providers have no tab but can still be opened to sign in.
   let activeGroup = $derived(groups.find((g) => g[0].providerId === tab));
 
   // Ticks once a minute so relative times stay fresh while the panel is open.
@@ -107,9 +112,19 @@
   {#if loaded}
     <div class="tabs" role="tablist">
       {#each tabs as t (t.id)}
-        <button role="tab" class="tab" class:active={tab === t.id} aria-selected={tab === t.id} onclick={() => (tab = t.id)}>
+        {@const labeled = t.id === "overview" || tab === t.id}
+        <button
+          role="tab"
+          class="tab"
+          class:active={tab === t.id}
+          class:labeled
+          aria-selected={tab === t.id}
+          aria-label={t.name}
+          title={t.name}
+          onclick={() => (tab = t.id)}
+        >
           <ProviderIcon id={t.id} size={13} />
-          <span>{t.name}</span>
+          {#if labeled}<span>{t.name}</span>{/if}
         </button>
       {/each}
     </div>
@@ -118,7 +133,12 @@
   <div class="list">
     {#if loaded}
       {#if tab === "overview" || !activeGroup}
-        <Overview {snaps} {now} onselect={(id) => (tab = id)} />
+        <Overview
+          snaps={connected.length ? connected.flat().filter((s) => s.accountId) : snaps}
+          more={connected.length ? unconnected : []}
+          {now}
+          onselect={(id) => (tab = id)}
+        />
       {:else}
         {#key tab}
           <ProviderCard snaps={activeGroup} {now} />
@@ -163,11 +183,14 @@
   .tabs {
     display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--chip);
   }
+  /* Only Overview and the selected tab show a name, so any number of providers fits. */
   .tab {
-    all: unset; flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    all: unset; flex: none; min-width: 26px; display: flex; align-items: center; justify-content: center; gap: 5px;
     font-size: 11.5px; font-weight: 500; color: var(--muted); padding: 5px 6px; border-radius: 7px;
     cursor: pointer; transition: background 0.18s, color 0.18s, box-shadow 0.18s; white-space: nowrap;
   }
+  .tab.labeled { flex: 1; min-width: 0; }
+  .tab span { overflow: hidden; text-overflow: ellipsis; }
   .tab:hover { color: var(--fg); }
   .tab.active { background: var(--tab-active); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
   .actions { display: flex; gap: 6px; }

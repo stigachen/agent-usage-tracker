@@ -8,6 +8,11 @@
 
   let { snaps, onclose }: { snaps: UsageSnapshot[]; onclose: () => void } = $props();
 
+  const pages = [
+    ["general", "General"],
+    ["accounts", "Accounts"],
+  ] as const;
+  let page = $state<(typeof pages)[number][0]>("general");
   let tray = $state("lowest");
   let refreshSecs = $state(600);
   let autostart = $state(false);
@@ -121,6 +126,15 @@
     <h1>Settings</h1>
   </div>
 
+  <div class="tabs" role="tablist">
+    {#each pages as [id, name] (id)}
+      <button role="tab" class="tab" class:active={page === id} aria-selected={page === id} onclick={() => (page = id)}>
+        {name}{#if id === "accounts" && accounts.length}<span class="count">{accounts.length}</span>{/if}
+      </button>
+    {/each}
+  </div>
+
+  {#if page === "general"}
   <section>
     <h3>Menu bar</h3>
     <div class="group">
@@ -157,6 +171,24 @@
     </div>
   </section>
 
+  <section>
+    <h3>About</h3>
+    <div class="group">
+      <div class="about">
+        <img src="/app-icon.png" alt="" width="44" height="44" />
+        <div class="about-text">
+          <span class="name">Agent Usage</span>
+          <span class="muted">Version {version}</span>
+          <span class="muted">Usage and quota for your coding agents</span>
+        </div>
+      </div>
+      <div class="row">
+        <span class="muted">© 2026 Guang Chen</span>
+        <button class="link" onclick={() => invoke("open_url", { url: REPO })}>GitHub ↗</button>
+      </div>
+    </div>
+  </section>
+  {:else}
   <section>
     <h3>Accounts</h3>
     <div class="group">
@@ -216,24 +248,7 @@
       </div>
     </section>
   {/if}
-
-  <section>
-    <h3>About</h3>
-    <div class="group">
-      <div class="about">
-        <img src="/app-icon.png" alt="" width="44" height="44" />
-        <div class="about-text">
-          <span class="name">Agent Usage</span>
-          <span class="muted">Version {version}</span>
-          <span class="muted">Usage and quota for your coding agents</span>
-        </div>
-      </div>
-      <div class="row">
-        <span class="muted">© 2026 Guang Chen</span>
-        <button class="link" onclick={() => invoke("open_url", { url: REPO })}>GitHub ↗</button>
-      </div>
-    </div>
-  </section>
+  {/if}
 
   {#if error}<p class="error">{error}</p>{/if}
 </div>
@@ -247,6 +262,15 @@
     border: 0; background: var(--chip); color: var(--fg); width: 26px; height: 26px;
     border-radius: 7px; display: grid; place-items: center; cursor: pointer;
   }
+  .tabs { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--chip); }
+  .tab {
+    all: unset; flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-size: 11.5px; font-weight: 500; color: var(--muted); padding: 5px 6px; border-radius: 7px;
+    cursor: pointer; transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active { background: var(--tab-active); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+  .count { font-size: 10px; padding: 0 5px; border-radius: 99px; background: var(--chip); }
   .back:hover { background: var(--track); }
   section { display: flex; flex-direction: column; gap: 6px; }
   h3 {
