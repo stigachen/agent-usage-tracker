@@ -68,14 +68,13 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
         for a in mine {
             let snap = match store::read_secret(&a.provider, &a.id) {
                 Ok(Some(secret)) => p.fetch(&state.http, &a.id, &secret).await,
-                Err(e) => {
+                other => {
                     let mut s = UsageSnapshot::empty(p.as_ref(), Some(&a.id));
-                    s.error = Some(format!("Couldn't read the token from the keychain: {e}"));
-                    s
-                }
-                Ok(None) => {
-                    let mut s = UsageSnapshot::empty(p.as_ref(), Some(&a.id));
-                    s.needs_auth = true;
+                    match other {
+                        Err(e) => s.error = Some(format!("Couldn't read the token from the keychain: {e}")),
+                        _ => s.needs_auth = true,
+                    }
+                    // Keep the billing token manageable even when the main token is unusable.
                     s.billing_configured =
                         a.provider == "copilot" && store::get_secret(providers::copilot::BILLING_KEY, &a.id).is_some();
                     s
