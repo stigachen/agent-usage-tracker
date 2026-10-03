@@ -32,11 +32,14 @@ pub struct Config {
     pub refresh_secs: u64,
     /// Provider ids in the user's order; unlisted providers follow in registry order.
     pub provider_order: Vec<String>,
+    /// Accounts kept out of the overview (and the tray's "lowest"). Covers discovered
+    /// accounts too, which aren't in `accounts`.
+    pub hidden: Vec<AccountRef>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { accounts: vec![], tray_display: TrayDisplay::default(), refresh_secs: 600, provider_order: vec![] }
+        Self { accounts: vec![], tray_display: TrayDisplay::default(), refresh_secs: 600, provider_order: vec![], hidden: vec![] }
     }
 }
 

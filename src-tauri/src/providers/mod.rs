@@ -40,6 +40,8 @@ pub struct UsageSnapshot {
     pub billing: Option<Billing>,
     /// A billing token is stored for this account, regardless of whether this fetch used it.
     pub billing_configured: bool,
+    /// The user hid this account from the overview.
+    pub hidden: bool,
     pub fetched_at: String,
 }
 
@@ -82,6 +84,7 @@ impl UsageSnapshot {
             period_ends_at: None,
             billing: None,
             billing_configured: false,
+            hidden: false,
             fetched_at: chrono::Utc::now().to_rfc3339(),
         }
     }

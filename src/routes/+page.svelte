@@ -15,6 +15,11 @@
   let refreshing = $state(false);
   let loaded = $state(false);
   let showSettings = $state(false);
+  let settingsPage = $state<"general" | "accounts">("general");
+  function openSettings(page: "general" | "accounts" = "general") {
+    settingsPage = page;
+    showSettings = true;
+  }
   let groups = $derived(
     Object.values(
       snaps.reduce<Record<string, UsageSnapshot[]>>((g, s) => {
@@ -32,6 +37,8 @@
     { id: "overview", name: "Overview" },
     ...connected.map((g) => ({ id: g[0].providerId, name: g[0].providerName })),
   ]);
+  // Accounts the user hid stay in their provider tab but not in the overview.
+  let overviewSnaps = $derived(connected.flat().filter((s) => s.accountId && !s.hidden));
   // Unconnected providers have no tab but can still be opened to sign in.
   let activeGroup = $derived(groups.find((g) => g[0].providerId === tab));
 
@@ -95,12 +102,12 @@
 
 <main bind:this={mainEl}>
   {#if showSettings}
-    <Settings {snaps} onclose={() => (showSettings = false)} />
+    <Settings {snaps} initialPage={settingsPage} onclose={() => (showSettings = false)} />
   {:else}
   <div class="top">
     <h1>Agent Usage</h1>
     <div class="actions">
-    <button class="icon" onclick={() => (showSettings = true)} title="Settings" aria-label="Settings">
+    <button class="icon" onclick={() => openSettings()} title="Settings" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>
     <button class="icon" class:spin={refreshing} onclick={refresh} title="Refresh" aria-label="Refresh">
@@ -134,7 +141,9 @@
     {#if loaded}
       {#if tab === "overview" || !activeGroup}
         <Overview
-          snaps={connected.length ? connected.flat().filter((s) => s.accountId) : snaps}
+          snaps={connected.length ? overviewSnaps : snaps}
+          hiddenCount={connected.flat().filter((s) => s.hidden).length}
+          onsettings={() => openSettings("accounts")}
           more={connected.length ? unconnected : []}
           {now}
           onselect={(id) => (tab = id)}

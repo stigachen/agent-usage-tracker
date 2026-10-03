@@ -9,9 +9,18 @@
   let {
     snaps,
     more = [],
+    hiddenCount = 0,
     now,
     onselect,
-  }: { snaps: UsageSnapshot[]; more?: UsageSnapshot[]; now: number; onselect: (id: string) => void } = $props();
+    onsettings,
+  }: {
+    snaps: UsageSnapshot[];
+    more?: UsageSnapshot[];
+    hiddenCount?: number;
+    now: number;
+    onselect: (id: string) => void;
+    onsettings?: () => void;
+  } = $props();
 
   // One row per account; providers without accounts get a placeholder row.
   let rows = $derived(
@@ -50,7 +59,10 @@
   }
 </script>
 
-<div class="list" class:sortable={groups.length > 1} role="list" data-reorder-list>
+{#if !snaps.length && hiddenCount}
+  <div class="empty muted small">All accounts are hidden from the overview.</div>
+{/if}
+<div class="list" class:empty-list={!snaps.length} class:sortable={groups.length > 1} role="list" data-reorder-list>
   {#each shown as g, gi (g.id)}
   <div
     class="group"
@@ -100,18 +112,25 @@
   {/each}
 </div>
 
-{#if more.length}
+{#if more.length || hiddenCount}
   <div class="more">
+    {#if hiddenCount}
+      <button class="chip" onclick={onsettings}>{hiddenCount} hidden</button>
+    {/if}
+    {#if more.length}
     <span class="muted small">Connect</span>
     {#each more as s (s.providerId)}
       <button class="chip" onclick={() => onselect(s.providerId)}>
         <ProviderIcon id={s.providerId} size={12} />{s.providerName}
       </button>
     {/each}
+    {/if}
   </div>
 {/if}
 
 <style>
+  .empty { text-align: center; padding: 14px 0 4px; }
+  .empty-list { display: none; }
   .more { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 2px; }
   .chip {
     all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
