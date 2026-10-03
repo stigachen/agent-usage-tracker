@@ -17,6 +17,15 @@
   const REPO = "https://github.com/stigachen/agent-usage-tracker";
 
   let accounts = $derived(snaps.filter((s) => s.accountId));
+  let copilot = $derived(accounts.filter((s) => s.providerId === "copilot"));
+  // Account id whose billing token field is open, and its draft value.
+  let editing = $state<string | null>(null);
+  let draft = $state("");
+  // Account id with a billing token request in flight; its buttons are disabled meanwhile.
+  let saving = $state<string | null>(null);
+  let patError = $state<{ account: string; msg: string } | null>(null);
+  const PAT_URL =
+    "https://github.com/settings/tokens/new?scopes=user&description=Agent%20Usage%20billing";
   const key = (s: UsageSnapshot) => `${s.providerId}:${s.accountId}`;
 
   const intervals = [
@@ -70,6 +79,26 @@
       await (next ? enable() : disable());
       autostart = next;
     });
+  }
+
+  function edit(account: string | null) {
+    editing = account;
+    draft = "";
+    patError = null;
+  }
+
+  async function saveToken(account: string, token: string) {
+    saving = account;
+    patError = null;
+    try {
+      await invoke("set_billing_token", { account, token });
+      editing = null;
+      draft = "";
+    } catch (e) {
+      patError = { account, msg: String(e) };
+    } finally {
+      saving = null;
+    }
   }
 
   function signOut(s: UsageSnapshot) {
@@ -147,6 +176,47 @@
     </div>
   </section>
 
+  {#if copilot.length}
+    <section>
+      <h3>Copilot model usage</h3>
+      <div class="group">
+        {#each copilot as s (s.accountId)}
+          <div class="row">
+            <span class="acc">
+              <span>@{s.account}</span>
+              <span class="muted">{s.billingConfigured ? (s.billing?.error ?? "Token saved") : "Not set up"}</span>
+            </span>
+            {#if s.billingConfigured}
+              <span class="actions">
+                <button class="link" disabled={saving === s.accountId} onclick={() => edit(s.accountId)}>Replace</button>
+                <button class="danger" disabled={saving === s.accountId} onclick={() => saveToken(s.accountId!, "")}>Remove</button>
+              </span>
+            {:else if editing !== s.accountId}
+              <button class="link" onclick={() => edit(s.accountId)}>Set up</button>
+            {/if}
+          </div>
+          {#if editing === s.accountId}
+            <div class="pat">
+              <span class="muted">
+                Create a classic token with the <b>user</b> scope while signed in to GitHub as
+                <b>@{s.account}</b>. It is stored in the system keychain and only used to read billing.
+              </span>
+              <button class="link" onclick={() => invoke("open_url", { url: PAT_URL })}>Create token on GitHub ↗</button>
+              <div class="pat-row">
+                <input type="password" placeholder="ghp_…" bind:value={draft} spellcheck="false" autocomplete="off" />
+                <button class="primary" disabled={!draft.trim() || saving === s.accountId} onclick={() => saveToken(s.accountId!, draft)}>
+                  {saving === s.accountId ? "Checking…" : "Save"}
+                </button>
+                <button class="link" disabled={saving === s.accountId} onclick={() => edit(null)}>Cancel</button>
+              </div>
+            </div>
+          {/if}
+          {#if patError?.account === s.accountId}<p class="error pat-error">{patError.msg}</p>{/if}
+        {/each}
+      </div>
+    </section>
+  {/if}
+
   <section>
     <h3>About</h3>
     <div class="group">
@@ -169,7 +239,8 @@
 </div>
 
 <style>
-  .settings { display: flex; flex-direction: column; gap: 14px; }
+  /* min-height: 0 lets the page shrink inside the 600px panel and scroll instead of clipping. */
+  .settings { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; }
   .top { display: flex; align-items: center; gap: 8px; }
   h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
   .back {
@@ -219,5 +290,21 @@
   .link {
     border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; padding: 0;
   }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .pat {
+    display: flex; flex-direction: column; gap: 8px; padding: 0 12px 10px; font-size: 11px;
+    align-items: flex-start;
+  }
+  .pat-error { padding: 0 12px 10px; }
+  .pat-row { display: flex; gap: 6px; align-items: center; width: 100%; }
+  .pat input {
+    flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--fg); background: var(--chip);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  }
+  .primary {
+    border: 0; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 500;
+    background: var(--accent); color: white; cursor: pointer;
+  }
+  .primary:disabled, .link:disabled, .danger:disabled { opacity: 0.5; cursor: default; }
   .error { color: #ff453a; font-size: 12px; margin: 0 4px; }
 </style>

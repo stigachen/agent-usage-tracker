@@ -24,11 +24,20 @@ struct AppState {
     snapshots: RwLock<Vec<UsageSnapshot>>,
     store: RwLock<Store>,
     wake: Notify,
+    /// Bumped on every billing token change per account, so a slow save can't undo a later remove.
+    billing_ops: std::sync::Mutex<std::collections::HashMap<String, u64>>,
 }
 
 type Shared = Arc<AppState>;
 
 impl AppState {
+    fn bump_billing_op(&self, account: &str) -> u64 {
+        let mut ops = self.billing_ops.lock().unwrap();
+        let v = ops.entry(account.to_string()).or_default();
+        *v += 1;
+        *v
+    }
+
     fn provider(&self, id: &str) -> Result<&dyn Provider, String> {
         self.providers
             .iter()
@@ -62,6 +71,8 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
                 None => {
                     let mut s = UsageSnapshot::empty(p.as_ref(), Some(&a.id));
                     s.needs_auth = true;
+                    s.billing_configured =
+                        a.provider == "copilot" && store::get_secret(providers::copilot::BILLING_KEY, &a.id).is_some();
                     s
                 }
             };
@@ -163,6 +174,10 @@ async fn finish_login(
 #[tauri::command]
 async fn logout(state: State<'_, Shared>, provider: String, account: String) -> Result<(), String> {
     store::delete_secret(&provider, &account)?;
+    if provider == "copilot" {
+        state.bump_billing_op(&account);
+        store::delete_secret(providers::copilot::BILLING_KEY, &account)?;
+    }
     {
         let mut st = state.store.write().await;
         st.config.accounts.retain(|a| !(a.provider == provider && a.id == account));
@@ -170,6 +185,26 @@ async fn logout(state: State<'_, Shared>, provider: String, account: String) -> 
             st.config.tray_display = TrayDisplay::Lowest;
         }
         st.save()?;
+    }
+    state.wake.notify_one();
+    Ok(())
+}
+
+/// Saves (or with an empty token, removes) a Copilot account's billing PAT after verifying it.
+#[tauri::command]
+async fn set_billing_token(state: State<'_, Shared>, account: String, token: String) -> Result<(), String> {
+    let op = state.bump_billing_op(&account);
+    let token = token.trim();
+    if token.is_empty() {
+        store::delete_secret(providers::copilot::BILLING_KEY, &account)?;
+    } else {
+        providers::copilot::verify_billing_token(&state.http, &account, token).await?;
+        // Check and write under the lock so a remove can't slip in between.
+        let ops = state.billing_ops.lock().unwrap();
+        if ops.get(&account) != Some(&op) {
+            return Err("Token was changed while this one was being checked".into());
+        }
+        store::set_secret(providers::copilot::BILLING_KEY, &account, token)?;
     }
     state.wake.notify_one();
     Ok(())
@@ -239,6 +274,7 @@ pub fn run() {
         snapshots: RwLock::new(vec![]),
         store: RwLock::new(Store::load(dir)),
         wake: Notify::new(),
+        billing_ops: Default::default(),
     }) };
 
     tauri::Builder::default()
@@ -253,6 +289,7 @@ pub fn run() {
             start_login,
             finish_login,
             logout,
+            set_billing_token,
             get_tray_display,
             set_tray_display,
             get_refresh_secs,

@@ -36,7 +36,33 @@ pub struct UsageSnapshot {
     pub note: Option<String>,
     /// End of the current billing period when no window carries it.
     pub period_ends_at: Option<String>,
+    /// Per-model billing details; only set when the account has a billing token.
+    pub billing: Option<Billing>,
+    /// A billing token is stored for this account, regardless of whether this fetch used it.
+    pub billing_configured: bool,
     pub fetched_at: String,
+}
+
+/// Usage for one model in the current billing month.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    pub model: String,
+    /// Credits covered by the plan.
+    pub included: f64,
+    pub included_amount: f64,
+    /// Credits billed beyond the plan.
+    pub additional: f64,
+    pub additional_amount: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Billing {
+    /// Sorted by total usage, largest first.
+    pub models: Vec<ModelUsage>,
+    pub additional_amount: f64,
+    pub error: Option<String>,
 }
 
 impl UsageSnapshot {
@@ -54,6 +80,8 @@ impl UsageSnapshot {
             login_hint: p.login_hint().map(Into::into),
             note: None,
             period_ends_at: None,
+            billing: None,
+            billing_configured: false,
             fetched_at: chrono::Utc::now().to_rfc3339(),
         }
     }
