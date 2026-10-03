@@ -5,3 +5,5 @@ src-tauri/target/
 .DS_Store
 *.log
 .env*
+.svelte-kit/
+build/
