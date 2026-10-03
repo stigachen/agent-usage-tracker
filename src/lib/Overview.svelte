@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import { flip } from "svelte/animate";
   import { fly } from "svelte/transition";
   import ProviderIcon from "./ProviderIcon.svelte";
+  import { Reorder } from "./reorder.svelte";
   import type { UsageSnapshot } from "./types";
 
   let {
@@ -23,6 +26,18 @@
     }),
   );
 
+  // Rows grouped by provider; providers are what gets reordered here.
+  let groups = $derived(
+    rows.reduce<{ id: string; rows: typeof rows }[]>((g, r) => {
+      const last = g[g.length - 1];
+      if (last?.id === r.s.providerId) last.rows.push(r);
+      else g.push({ id: r.s.providerId, rows: [r] });
+      return g;
+    }, []),
+  );
+  const reorder = new Reorder((order) => invoke("set_provider_order", { order }));
+  let shown = $derived(reorder.order(groups, (g) => g.id));
+
   const tone = (left: number) => (left <= 10 ? "danger" : left <= 30 ? "warn" : "ok");
 
   function resetIn(iso: string | null) {
@@ -35,8 +50,27 @@
   }
 </script>
 
-<div class="list">
-  {#each rows as { s, worst, left }, i (s.providerId + (s.accountId ?? ""))}
+<div class="list" class:sortable={groups.length > 1} role="list" data-reorder-list>
+  {#each shown as g, gi (g.id)}
+  <div
+    class="group"
+    role="listitem"
+    class:dragging={reorder.dragging === g.id}
+    data-reorder-key={g.id}
+    animate:flip={{ duration: 160 }}
+  >
+  {#if groups.length > 1}
+    <span
+      class="handle"
+      role="button"
+      tabindex="-1"
+      aria-label="Drag to reorder"
+      title="Drag to reorder"
+      onpointerdown={(e) => reorder.start(e, g.id, groups.map((x) => x.id))}
+    ><svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg></span>
+  {/if}
+  {#each g.rows as { s, worst, left }, j (s.providerId + (s.accountId ?? ""))}
+    {@const i = gi + j}
     <button class="row" onclick={() => onselect(s.providerId)} in:fly={{ y: 6, duration: 200, delay: i * 30 }}>
       <div class="logo"><ProviderIcon id={s.providerId} /></div>
       <div class="mid">
@@ -61,6 +95,8 @@
         <div class="pct {tone(left)}-text">{left}<span>%</span></div>
       {/if}
     </button>
+  {/each}
+  </div>
   {/each}
 </div>
 
@@ -92,7 +128,20 @@
     transition: background 0.15s;
   }
   .row:hover { background: var(--chip); }
-  .row + .row { border-top: 1px solid var(--border); }
+  .row + .row, .group + .group { border-top: 1px solid var(--border); }
+  .group { position: relative; }
+  /* The list's card background is translucent, so only the lifted item gets its own. */
+  .group.dragging { z-index: 1; background: var(--tab-active); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); }
+  /* Right-edge grip, shown on hover; sortable lists reserve its slot so it never covers the %. */
+  .list.sortable .row { padding-right: 24px; }
+  .handle {
+    position: absolute; right: 4px; top: 0; bottom: 0; width: 16px; z-index: 1;
+    display: grid; place-items: center; color: var(--muted);
+    cursor: grab; opacity: 0; transition: opacity 0.15s, color 0.15s; touch-action: none;
+  }
+  .group:hover .handle, .group.dragging .handle { opacity: 1; }
+  .handle:hover { color: var(--fg); }
+  .group.dragging .handle { cursor: grabbing; }
   .logo {
     width: 30px; height: 30px; border-radius: 9px; flex: none;
     display: grid; place-items: center; background: var(--chip);
