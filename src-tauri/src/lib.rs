@@ -134,10 +134,19 @@ async fn resort(app: &AppHandle, state: &AppState) {
 }
 
 #[tauri::command]
+/// `order` lists only the providers the user could drag (those shown in the overview).
+/// They're placed into the slots they already occupy in the full order, so hidden and
+/// unconnected providers keep their positions.
 async fn set_provider_order(app: AppHandle, state: State<'_, Shared>, order: Vec<String>) -> Result<(), String> {
     {
         let mut st = state.store.write().await;
-        st.config.provider_order = order;
+        let mut full: Vec<String> =
+            ordered_providers(&state, &st.config.provider_order).iter().map(|p| p.id().to_string()).collect();
+        let mut next = order.iter();
+        for slot in full.iter_mut().filter(|id| order.contains(id)) {
+            *slot = next.next().unwrap().clone();
+        }
+        st.config.provider_order = full;
         st.save()?;
     }
     resort(&app, &state).await;
