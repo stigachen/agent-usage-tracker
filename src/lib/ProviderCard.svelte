@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { flip } from "svelte/animate";
   import { fly } from "svelte/transition";
+  import { Reorder } from "./reorder.svelte";
   import ProviderIcon from "./ProviderIcon.svelte";
   import type { DeviceCode, UsageSnapshot } from "./types";
 
@@ -8,6 +10,10 @@
   let first = $derived(snaps[0]);
   // Placeholder snapshot (no account) means the provider has no accounts yet.
   let accounts = $derived(snaps.filter((s) => s.accountId));
+  // Discovered (managed) accounts aren't stored, so only stored ones can be reordered.
+  let sortable = $derived(accounts.length > 1 && !first.managed);
+  const reorder = new Reorder((ids) => invoke("set_account_order", { provider: first.providerId, ids }));
+  let shown = $derived(reorder.order(accounts, (s) => s.accountId!));
   let login = $state<DeviceCode | null>(null);
   let loginError = $state<string | null>(null);
   let copied = $state(false);
@@ -114,9 +120,16 @@
   {/if}
   {#if loginError}<p class="error">{loginError}</p>{/if}
 
-  {#each accounts as snap (snap.accountId)}
+  <div class="accounts" role="list" data-reorder-list>
+  {#each shown as snap (snap.accountId)}
     {@const q = quotas(snap)}
-    <div class="account">
+    <div
+      class="account"
+      role="listitem"
+      class:dragging={reorder.dragging === snap.accountId}
+      data-reorder-key={snap.accountId}
+      animate:flip={{ duration: 160 }}
+    >
       <div class="acc-head">
         <span class="acc-name">@{snap.account}</span>
         {#if snap.plan}<span class="plan">{prettyPlan(snap.plan)}</span>{/if}
@@ -128,6 +141,16 @@
         <button class="ghost" onclick={() => signOut(snap)} title="Sign out" aria-label="Sign out @{snap.account}">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
+        {/if}
+        {#if sortable}
+          <span
+            class="handle"
+            role="button"
+            tabindex="-1"
+            aria-label="Drag to reorder"
+            title="Drag to reorder"
+            onpointerdown={(e) => reorder.start(e, snap.accountId!, accounts.map((a) => a.accountId!))}
+          ><svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg></span>
         {/if}
       </div>
 
@@ -219,6 +242,7 @@
       {/if}
     </div>
   {/each}
+  </div>
 </section>
 
 <style>
@@ -253,10 +277,20 @@
   .account:hover .ghost, .ghost.show { opacity: 1; }
   .ghost:hover { background: var(--chip); color: var(--fg); }
 
-  .account { display: flex; flex-direction: column; gap: 10px; }
+  .accounts { display: flex; flex-direction: column; gap: 12px; }
+  .account { display: flex; flex-direction: column; gap: 10px; border-radius: 8px; }
+  .account.dragging { position: relative; z-index: 1; background: var(--tab-active); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); }
   .account + .account { border-top: 1px solid var(--border); padding-top: 12px; }
   .acc-head { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
   .acc-head .ghost { margin-left: auto; width: 20px; height: 20px; }
+  /* Rightmost in the header, after sign-out; shown on hover. */
+  .handle {
+    display: grid; place-items: center; width: 16px; height: 20px; color: var(--muted);
+    cursor: grab; opacity: 0; transition: opacity 0.15s, color 0.15s; touch-action: none;
+  }
+  .account:hover .handle, .account.dragging .handle { opacity: 1; }
+  .handle:hover { color: var(--fg); }
+  .account.dragging .handle { cursor: grabbing; }
   .armed {
     margin-left: auto; border: 0; border-radius: 6px; padding: 2px 8px; font-size: 11px;
     font-weight: 500; background: #ff453a; color: white; cursor: pointer;

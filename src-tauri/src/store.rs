@@ -30,11 +30,13 @@ pub struct Config {
     pub accounts: Vec<AccountRef>,
     pub tray_display: TrayDisplay,
     pub refresh_secs: u64,
+    /// Provider ids in the user's order; unlisted providers follow in registry order.
+    pub provider_order: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { accounts: vec![], tray_display: TrayDisplay::default(), refresh_secs: 600 }
+        Self { accounts: vec![], tray_display: TrayDisplay::default(), refresh_secs: 600, provider_order: vec![] }
     }
 }
 

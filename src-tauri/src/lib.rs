@@ -47,6 +47,43 @@ impl AppState {
     }
 }
 
+/// Providers in the user's order, then any not yet ordered in registry order.
+fn ordered_providers<'a>(state: &'a AppState, order: &[String]) -> Vec<&'a dyn Provider> {
+    let mut ps: Vec<&dyn Provider> = state.providers.iter().map(|p| p.as_ref()).collect();
+    ps.sort_by_key(|p| order.iter().position(|id| id == p.id()).unwrap_or(usize::MAX));
+    ps
+}
+
+/// Sorts snapshots by provider order, then by the stored account order. Stable, so
+/// discovered accounts (not in the stored list) keep their relative order.
+fn sort_snapshots(snaps: &mut [UsageSnapshot], state: &AppState, cfg: &store::Config) {
+    let ps = ordered_providers(state, &cfg.provider_order);
+    let rank = |s: &UsageSnapshot| {
+        let p = ps.iter().position(|p| p.id() == s.provider_id).unwrap_or(usize::MAX);
+        let a = cfg
+            .accounts
+            .iter()
+            .position(|a| a.provider == s.provider_id && Some(&a.id) == s.account_id.as_ref())
+            .unwrap_or(usize::MAX);
+        (p, a)
+    };
+    snaps.sort_by_key(rank);
+}
+
+/// Sorts and publishes snapshots. `fresh` replaces the cache; `None` re-sorts what's cached.
+/// Everything happens under the snapshots write lock so a refresh and a re-sort can't
+/// interleave and publish an older copy last.
+async fn publish(app: &AppHandle, state: &AppState, fresh: Option<Vec<UsageSnapshot>>) {
+    let cfg = state.store.read().await.config.clone();
+    let mut cache = state.snapshots.write().await;
+    if let Some(snaps) = fresh {
+        *cache = snaps;
+    }
+    sort_snapshots(&mut cache, state, &cfg);
+    update_tray(app, &cache, &cfg.tray_display);
+    let _ = app.emit("usage-updated", cache.clone());
+}
+
 async fn refresh_all(app: &AppHandle, state: &AppState) {
     let accounts = state.store.read().await.config.accounts.clone();
     let mut snaps = Vec::new();
@@ -83,10 +120,47 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
             snaps.push(snap);
         }
     }
-    let display = state.store.read().await.config.tray_display.clone();
-    update_tray(app, &snaps, &display);
-    *state.snapshots.write().await = snaps.clone();
-    let _ = app.emit("usage-updated", snaps);
+    publish(app, state, Some(snaps)).await;
+}
+
+/// Re-sorts the cached snapshots after an order change, without refetching.
+async fn resort(app: &AppHandle, state: &AppState) {
+    publish(app, state, None).await;
+}
+
+#[tauri::command]
+async fn set_provider_order(app: AppHandle, state: State<'_, Shared>, order: Vec<String>) -> Result<(), String> {
+    {
+        let mut st = state.store.write().await;
+        st.config.provider_order = order;
+        st.save()?;
+    }
+    resort(&app, &state).await;
+    Ok(())
+}
+
+/// Reorders one provider's stored accounts; `ids` lists them in the new order.
+#[tauri::command]
+async fn set_account_order(
+    app: AppHandle,
+    state: State<'_, Shared>,
+    provider: String,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    {
+        let mut st = state.store.write().await;
+        let accounts = &mut st.config.accounts;
+        // Fill this provider's slots, in place, with its accounts in the requested order.
+        let mut mine: Vec<AccountRef> = accounts.iter().filter(|a| a.provider == provider).cloned().collect();
+        mine.sort_by_key(|a| ids.iter().position(|id| *id == a.id).unwrap_or(usize::MAX));
+        let mut next = mine.into_iter();
+        for a in accounts.iter_mut().filter(|a| a.provider == provider) {
+            *a = next.next().unwrap();
+        }
+        st.save()?;
+    }
+    resort(&app, &state).await;
+    Ok(())
 }
 
 /// Moves tokens saved before multi-account support to `<provider>:<login>`.
@@ -301,6 +375,8 @@ pub fn run() {
             finish_login,
             logout,
             set_billing_token,
+            set_provider_order,
+            set_account_order,
             get_tray_display,
             set_tray_display,
             get_refresh_secs,
