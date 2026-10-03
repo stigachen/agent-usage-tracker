@@ -18,7 +18,22 @@ export interface UsageSnapshot {
   loginHint: string | null;
   note: string | null;
   periodEndsAt: string | null;
+  billing: Billing | null;
   fetchedAt: string;
+}
+
+export interface ModelUsage {
+  model: string;
+  included: number;
+  includedAmount: number;
+  additional: number;
+  additionalAmount: number;
+}
+
+export interface Billing {
+  models: ModelUsage[];
+  additionalAmount: number;
+  error: string | null;
 }
 
 export interface DeviceCode {

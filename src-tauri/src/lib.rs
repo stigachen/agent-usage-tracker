@@ -163,6 +163,9 @@ async fn finish_login(
 #[tauri::command]
 async fn logout(state: State<'_, Shared>, provider: String, account: String) -> Result<(), String> {
     store::delete_secret(&provider, &account)?;
+    if provider == "copilot" {
+        store::delete_secret(providers::copilot::BILLING_KEY, &account)?;
+    }
     {
         let mut st = state.store.write().await;
         st.config.accounts.retain(|a| !(a.provider == provider && a.id == account));
@@ -170,6 +173,20 @@ async fn logout(state: State<'_, Shared>, provider: String, account: String) -> 
             st.config.tray_display = TrayDisplay::Lowest;
         }
         st.save()?;
+    }
+    state.wake.notify_one();
+    Ok(())
+}
+
+/// Saves (or with an empty token, removes) a Copilot account's billing PAT after verifying it.
+#[tauri::command]
+async fn set_billing_token(state: State<'_, Shared>, account: String, token: String) -> Result<(), String> {
+    let token = token.trim();
+    if token.is_empty() {
+        store::delete_secret(providers::copilot::BILLING_KEY, &account)?;
+    } else {
+        providers::copilot::verify_billing_token(&state.http, &account, token).await?;
+        store::set_secret(providers::copilot::BILLING_KEY, &account, token)?;
     }
     state.wake.notify_one();
     Ok(())
@@ -253,6 +270,7 @@ pub fn run() {
             start_login,
             finish_login,
             logout,
+            set_billing_token,
             get_tray_display,
             set_tray_display,
             get_refresh_secs,

@@ -14,6 +14,8 @@
   let confirming = $state<string | null>(null);
 
   const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+  const usd = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+  let expanded = $state<Record<string, boolean>>({});
   // Providers that only report percentages use limit = 100.
   const isPct = (w: { limit: number | null }) => w.limit === 100;
   const prettyPlan = (p: string) => p.replace(/_/g, " ");
@@ -180,6 +182,33 @@
           </div>
         {/each}
 
+        {#if snap.billing}
+          {@const b = snap.billing}
+          {@const id = snap.accountId!}
+          {#if b.error}
+            <div class="error-box"><span>Couldn't load model usage</span><span class="muted small">{b.error}</span></div>
+          {:else}
+            <div class="row">
+              <span class="label">Additional usage</span>
+              <span class="value">{usd.format(b.additionalAmount)}</span>
+            </div>
+            {#if b.models.length}
+              <button class="toggle" onclick={() => (expanded[id] = !expanded[id])}>
+                <span class="caret" class:open={expanded[id]}>▸</span> By model ({b.models.length})
+              </button>
+              {#if expanded[id]}
+                <div class="models">
+                  {#each b.models as m (m.model)}
+                    <span class="m-name">{m.model}</span>
+                    <span class="value">{fmt.format(m.included + m.additional)}</span>
+                    <span class="value muted">{usd.format(m.includedAmount + m.additionalAmount)}</span>
+                  {/each}
+                </div>
+              {/if}
+            {/if}
+          {/if}
+        {/if}
+
         {#if q.unlimited.length}
           <div class="chips">
             {#each q.unlimited as w (w.label)}
@@ -258,6 +287,20 @@
   .ok { background: linear-gradient(90deg, #30d158, #34c759); }
   .warn { background: linear-gradient(90deg, #ff9f0a, #ffb340); }
   .danger { background: linear-gradient(90deg, #ff453a, #ff6961); }
+
+  .toggle {
+    align-self: flex-start; border: 0; background: none; padding: 0; cursor: pointer;
+    font-size: 11px; color: var(--muted);
+  }
+  .toggle:hover { color: var(--fg); }
+  .caret { display: inline-block; transition: transform 0.15s; }
+  .caret.open { transform: rotate(90deg); }
+  .models {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; font-size: 11px;
+    text-align: right;
+  }
+  .m-name { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .models .value { font-size: 11px; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip {
