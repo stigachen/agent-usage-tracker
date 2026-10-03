@@ -38,6 +38,8 @@ pub struct UsageSnapshot {
     pub period_ends_at: Option<String>,
     /// Per-model billing details; only set when the account has a billing token.
     pub billing: Option<Billing>,
+    /// A billing token is stored for this account, regardless of whether this fetch used it.
+    pub billing_configured: bool,
     pub fetched_at: String,
 }
 
@@ -79,6 +81,7 @@ impl UsageSnapshot {
             note: None,
             period_ends_at: None,
             billing: None,
+            billing_configured: false,
             fetched_at: chrono::Utc::now().to_rfc3339(),
         }
     }

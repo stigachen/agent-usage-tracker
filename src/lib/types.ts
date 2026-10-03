@@ -19,6 +19,7 @@ export interface UsageSnapshot {
   note: string | null;
   periodEndsAt: string | null;
   billing: Billing | null;
+  billingConfigured: boolean;
   fetchedAt: string;
 }
 

@@ -143,6 +143,8 @@ impl Provider for Copilot {
 
     async fn fetch(&self, http: &reqwest::Client, account_id: &str, tok: &str) -> UsageSnapshot {
         let mut snap = UsageSnapshot::empty(self, Some(account_id));
+        let billing_pat = store::get_secret(BILLING_KEY, account_id);
+        snap.billing_configured = billing_pat.is_some();
         let res = http
             .get("https://api.github.com/copilot_internal/user")
             .header("Authorization", format!("token {tok}"))
@@ -188,7 +190,7 @@ impl Provider for Copilot {
                 resets_at: body.quota_reset_date_utc.clone(),
             })
             .collect();
-        if let Some(pat) = store::get_secret(BILLING_KEY, account_id) {
+        if let Some(pat) = billing_pat {
             snap.billing = Some(billing_report(http, account_id, &pat).await.unwrap_or_else(|e| Billing {
                 models: vec![],
                 additional_amount: 0.0,

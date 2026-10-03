@@ -21,7 +21,9 @@
   // Account id whose billing token field is open, and its draft value.
   let editing = $state<string | null>(null);
   let draft = $state("");
-  let saving = $state(false);
+  // Account id with a billing token request in flight; its buttons are disabled meanwhile.
+  let saving = $state<string | null>(null);
+  let patError = $state<{ account: string; msg: string } | null>(null);
   const PAT_URL =
     "https://github.com/settings/tokens/new?scopes=user&description=Agent%20Usage%20billing";
   const key = (s: UsageSnapshot) => `${s.providerId}:${s.accountId}`;
@@ -79,14 +81,24 @@
     });
   }
 
+  function edit(account: string | null) {
+    editing = account;
+    draft = "";
+    patError = null;
+  }
+
   async function saveToken(account: string, token: string) {
-    saving = true;
-    await run(async () => {
+    saving = account;
+    patError = null;
+    try {
       await invoke("set_billing_token", { account, token });
       editing = null;
       draft = "";
-    });
-    saving = false;
+    } catch (e) {
+      patError = { account, msg: String(e) };
+    } finally {
+      saving = null;
+    }
   }
 
   function signOut(s: UsageSnapshot) {
@@ -172,15 +184,15 @@
           <div class="row">
             <span class="acc">
               <span>@{s.account}</span>
-              <span class="muted">{s.billing ? (s.billing.error ?? "Token saved") : "Not set up"}</span>
+              <span class="muted">{s.billingConfigured ? (s.billing?.error ?? "Token saved") : "Not set up"}</span>
             </span>
-            {#if s.billing}
+            {#if s.billingConfigured}
               <span class="actions">
-                <button class="link" onclick={() => { editing = s.accountId; draft = ""; }}>Replace</button>
-                <button class="danger" onclick={() => saveToken(s.accountId!, "")}>Remove</button>
+                <button class="link" disabled={saving === s.accountId} onclick={() => edit(s.accountId)}>Replace</button>
+                <button class="danger" disabled={saving === s.accountId} onclick={() => saveToken(s.accountId!, "")}>Remove</button>
               </span>
             {:else if editing !== s.accountId}
-              <button class="link" onclick={() => { editing = s.accountId; draft = ""; }}>Set up</button>
+              <button class="link" onclick={() => edit(s.accountId)}>Set up</button>
             {/if}
           </div>
           {#if editing === s.accountId}
@@ -192,13 +204,14 @@
               <button class="link" onclick={() => invoke("open_url", { url: PAT_URL })}>Create token on GitHub ↗</button>
               <div class="pat-row">
                 <input type="password" placeholder="ghp_…" bind:value={draft} spellcheck="false" autocomplete="off" />
-                <button class="primary" disabled={!draft.trim() || saving} onclick={() => saveToken(s.accountId!, draft)}>
-                  {saving ? "Checking…" : "Save"}
+                <button class="primary" disabled={!draft.trim() || saving === s.accountId} onclick={() => saveToken(s.accountId!, draft)}>
+                  {saving === s.accountId ? "Checking…" : "Save"}
                 </button>
-                <button class="link" onclick={() => (editing = null)}>Cancel</button>
+                <button class="link" disabled={saving === s.accountId} onclick={() => edit(null)}>Cancel</button>
               </div>
             </div>
           {/if}
+          {#if patError?.account === s.accountId}<p class="error pat-error">{patError.msg}</p>{/if}
         {/each}
       </div>
     </section>
@@ -226,7 +239,8 @@
 </div>
 
 <style>
-  .settings { display: flex; flex-direction: column; gap: 14px; }
+  /* min-height: 0 lets the page shrink inside the 600px panel and scroll instead of clipping. */
+  .settings { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; }
   .top { display: flex; align-items: center; gap: 8px; }
   h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
   .back {
@@ -281,6 +295,7 @@
     display: flex; flex-direction: column; gap: 8px; padding: 0 12px 10px; font-size: 11px;
     align-items: flex-start;
   }
+  .pat-error { padding: 0 12px 10px; }
   .pat-row { display: flex; gap: 6px; align-items: center; width: 100%; }
   .pat input {
     flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--fg); background: var(--chip);
@@ -290,6 +305,6 @@
     border: 0; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 500;
     background: var(--accent); color: white; cursor: pointer;
   }
-  .primary:disabled { opacity: 0.5; cursor: default; }
+  .primary:disabled, .link:disabled, .danger:disabled { opacity: 0.5; cursor: default; }
   .error { color: #ff453a; font-size: 12px; margin: 0 4px; }
 </style>
