@@ -66,9 +66,14 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
             snaps.push(s);
         }
         for a in mine {
-            let snap = match store::get_secret(&a.provider, &a.id) {
-                Some(secret) => p.fetch(&state.http, &a.id, &secret).await,
-                None => {
+            let snap = match store::read_secret(&a.provider, &a.id) {
+                Ok(Some(secret)) => p.fetch(&state.http, &a.id, &secret).await,
+                Err(e) => {
+                    let mut s = UsageSnapshot::empty(p.as_ref(), Some(&a.id));
+                    s.error = Some(format!("Couldn't read the token from the keychain: {e}"));
+                    s
+                }
+                Ok(None) => {
                     let mut s = UsageSnapshot::empty(p.as_ref(), Some(&a.id));
                     s.needs_auth = true;
                     s.billing_configured =
@@ -173,10 +178,14 @@ async fn finish_login(
 
 #[tauri::command]
 async fn logout(state: State<'_, Shared>, provider: String, account: String) -> Result<(), String> {
-    store::delete_secret(&provider, &account)?;
+    // Remove the account even if the keychain refuses, so sign-out never gets stuck;
+    // report the leftover entry afterwards.
+    let mut leftover = store::delete_secret(&provider, &account).err();
     if provider == "copilot" {
         state.bump_billing_op(&account);
-        store::delete_secret(providers::copilot::BILLING_KEY, &account)?;
+        if let Err(e) = store::delete_secret(providers::copilot::BILLING_KEY, &account) {
+            leftover.get_or_insert(e);
+        }
     }
     {
         let mut st = state.store.write().await;
@@ -187,7 +196,10 @@ async fn logout(state: State<'_, Shared>, provider: String, account: String) -> 
         st.save()?;
     }
     state.wake.notify_one();
-    Ok(())
+    match leftover {
+        Some(e) => Err(format!("Signed out, but the token couldn't be removed from the keychain: {e}")),
+        None => Ok(()),
+    }
 }
 
 /// Saves (or with an empty token, removes) a Copilot account's billing PAT after verifying it.
