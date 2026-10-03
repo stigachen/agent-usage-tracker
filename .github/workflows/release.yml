@@ -1,4 +1,5 @@
-# Builds a signed + notarized universal macOS dmg and attaches it to a draft release.
+# Builds a signed + notarized universal macOS dmg and an (unsigned for now) Windows
+# installer, attaching both to one draft release.
 # Trigger: push a tag like v0.1.0, or run manually from the Actions tab.
 name: Release
 
@@ -11,7 +12,27 @@ permissions:
   contents: write
 
 jobs:
+  # Create the draft once so the platform jobs upload into the same release by id,
+  # instead of racing to create it or guessing it from "the latest draft".
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.create.outputs.id }}
+      tag: ${{ steps.create.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "${{ github.ref_type }}" = tag ]; then TAG="${{ github.ref_name }}"; else TAG="v$VERSION-${{ github.run_number }}"; fi
+          gh release create "$TAG" --draft --title "Agent Usage v$VERSION" --notes "" --target "${{ github.sha }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+
   macos:
+    needs: release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +62,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v__VERSION__-{0}', github.run_number) }}
-          releaseName: Agent Usage v__VERSION__
-          releaseDraft: true
+          releaseId: ${{ needs.release.outputs.id }}
           args: --target universal-apple-darwin --bundles app,dmg
 
       # tauri-action notarizes the .app but not the dmg wrapping it.
@@ -53,11 +72,38 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAG: ${{ needs.release.outputs.tag }}
         run: |
           DMG=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
           xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           xcrun stapler staple "$DMG"
-          TAG=$(gh release list --json tagName,isDraft,name -q '[.[] | select(.isDraft)][0].tagName')
           # tauri-action uploads with dots for spaces in the asset name.
           cp "$DMG" "$(basename "$DMG" | tr ' ' '.')"
           gh release upload "$TAG" "$(basename "$DMG" | tr ' ' '.')" --clobber
+
+  windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # Unsigned for now: SmartScreen will warn on first run.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.release.outputs.id }}
+          args: --target x86_64-pc-windows-msvc --bundles nsis

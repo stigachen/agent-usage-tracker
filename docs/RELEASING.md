@@ -1,7 +1,9 @@
 # Releasing
 
-macOS builds are signed, notarized and published by GitHub Actions
+macOS and Windows builds are produced by GitHub Actions
 (`.github/workflows/release.yml`). Nothing needs to be signed locally.
+macOS builds are signed and notarized; Windows builds are not signed yet,
+so SmartScreen warns on first run.
 
 ## Cut a release
 
@@ -13,9 +15,12 @@ macOS builds are signed, notarized and published by GitHub Actions
    git tag v0.1.1
    git push origin v0.1.1
    ```
-4. The workflow (about 6 minutes) builds a universal (Intel + Apple Silicon) app,
-   signs it with the Developer ID certificate, notarizes and staples both the
-   `.app` and the `.dmg`, then attaches them to a **draft** GitHub Release.
+4. The workflow first creates a **draft** GitHub Release for the tag, then two jobs
+   upload into it in parallel:
+   - macOS (about 6 minutes): a universal (Intel + Apple Silicon) app, signed with the
+     Developer ID certificate; both the `.app` and the `.dmg` are notarized and stapled.
+   - Windows: an x64 NSIS installer (`*_x64-setup.exe`), installed per user. It
+     downloads WebView2 if missing.
 5. Check the draft on the [Releases page](../../releases), edit the notes, then publish:
    ```bash
    gh release edit v0.1.1 --draft=false --notes "..."
@@ -33,6 +38,8 @@ spctl -a -vv -t open --context context:primary-signature Agent.Usage_*.dmg
 ```
 
 Both should report `accepted` / `source=Notarized Developer ID`.
+
+The Windows installer is unsigned, so there is nothing to verify beyond installing it.
 
 ## Redo a failed release
 
