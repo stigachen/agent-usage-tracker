@@ -70,11 +70,18 @@ fn sort_snapshots(snaps: &mut [UsageSnapshot], state: &AppState, cfg: &store::Co
     snaps.sort_by_key(rank);
 }
 
-async fn publish(app: &AppHandle, state: &AppState, snaps: Vec<UsageSnapshot>) {
-    let display = state.store.read().await.config.tray_display.clone();
-    update_tray(app, &snaps, &display);
-    *state.snapshots.write().await = snaps.clone();
-    let _ = app.emit("usage-updated", snaps);
+/// Sorts and publishes snapshots. `fresh` replaces the cache; `None` re-sorts what's cached.
+/// Everything happens under the snapshots write lock so a refresh and a re-sort can't
+/// interleave and publish an older copy last.
+async fn publish(app: &AppHandle, state: &AppState, fresh: Option<Vec<UsageSnapshot>>) {
+    let cfg = state.store.read().await.config.clone();
+    let mut cache = state.snapshots.write().await;
+    if let Some(snaps) = fresh {
+        *cache = snaps;
+    }
+    sort_snapshots(&mut cache, state, &cfg);
+    update_tray(app, &cache, &cfg.tray_display);
+    let _ = app.emit("usage-updated", cache.clone());
 }
 
 async fn refresh_all(app: &AppHandle, state: &AppState) {
@@ -113,15 +120,12 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
             snaps.push(snap);
         }
     }
-    sort_snapshots(&mut snaps, state, &state.store.read().await.config);
-    publish(app, state, snaps).await;
+    publish(app, state, Some(snaps)).await;
 }
 
 /// Re-sorts the cached snapshots after an order change, without refetching.
 async fn resort(app: &AppHandle, state: &AppState) {
-    let mut snaps = state.snapshots.read().await.clone();
-    sort_snapshots(&mut snaps, state, &state.store.read().await.config);
-    publish(app, state, snaps).await;
+    publish(app, state, None).await;
 }
 
 #[tauri::command]
