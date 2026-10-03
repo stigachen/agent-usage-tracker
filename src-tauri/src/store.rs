@@ -71,7 +71,16 @@ fn key(provider: &str, account: &str) -> String {
 }
 
 pub fn get_secret(provider: &str, account: &str) -> Option<String> {
-    entry(&key(provider, account)).ok()?.get_password().ok()
+    read_secret(provider, account).ok().flatten()
+}
+
+/// Like `get_secret`, but tells "no token stored" (`Ok(None)`) apart from a keychain failure.
+pub fn read_secret(provider: &str, account: &str) -> Result<Option<String>, String> {
+    match entry(&key(provider, account)).and_then(|e| e.get_password()) {
+        Ok(s) => Ok(Some(s)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 pub fn set_secret(provider: &str, account: &str, secret: &str) -> Result<(), String> {
