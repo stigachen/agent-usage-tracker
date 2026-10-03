@@ -20,6 +20,7 @@ export interface UsageSnapshot {
   periodEndsAt: string | null;
   billing: Billing | null;
   billingConfigured: boolean;
+  hidden: boolean;
   fetchedAt: string;
 }
 

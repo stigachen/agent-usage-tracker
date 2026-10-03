@@ -6,13 +6,18 @@
   import { fly } from "svelte/transition";
   import type { TrayDisplay, UsageSnapshot } from "./types";
 
-  let { snaps, onclose }: { snaps: UsageSnapshot[]; onclose: () => void } = $props();
+  let {
+    snaps,
+    initialPage = "general",
+    onclose,
+  }: { snaps: UsageSnapshot[]; initialPage?: "general" | "accounts"; onclose: () => void } = $props();
 
   const pages = [
     ["general", "General"],
     ["accounts", "Accounts"],
   ] as const;
-  let page = $state<(typeof pages)[number][0]>("general");
+  // svelte-ignore state_referenced_locally -- only the page to open with
+  let page = $state<(typeof pages)[number][0]>(initialPage);
   let tray = $state("lowest");
   let refreshSecs = $state(600);
   let autostart = $state(false);
@@ -106,6 +111,10 @@
     }
   }
 
+  function setHidden(s: UsageSnapshot, hidden: boolean) {
+    run(() => invoke("set_account_hidden", { provider: s.providerId, account: s.accountId, hidden }));
+  }
+
   function signOut(s: UsageSnapshot) {
     const k = key(s);
     if (confirming !== k) {
@@ -191,6 +200,7 @@
   {:else}
   <section>
     <h3>Accounts</h3>
+    <p class="hint">Switch off to hide an account from Overview. It stays in its own tab.</p>
     <div class="group">
       {#each accounts as s (key(s))}
         <div class="row">
@@ -198,9 +208,24 @@
             <span>@{s.account}</span>
             <span class="muted">{s.providerName}</span>
           </span>
-          <button class="danger" class:armed={confirming === key(s)} onclick={() => signOut(s)}>
-            {confirming === key(s) ? "Sign out?" : "Sign out"}
-          </button>
+          <span class="actions">
+            <button
+              class="switch small"
+              class:on={!s.hidden}
+              onclick={() => setHidden(s, !s.hidden)}
+              role="switch"
+              aria-checked={!s.hidden}
+              aria-label="Show @{s.account} in Overview"
+              title={s.hidden ? "Hidden from Overview" : "Shown in Overview"}
+            >
+              <span class="knob"></span>
+            </button>
+            {#if !s.managed}
+              <button class="danger" class:armed={confirming === key(s)} onclick={() => signOut(s)}>
+                {confirming === key(s) ? "Sign out?" : "Sign out"}
+              </button>
+            {/if}
+          </span>
         </div>
       {:else}
         <div class="row muted">No accounts yet</div>
@@ -302,6 +327,10 @@
     background: white; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.2s;
   }
   .switch.on .knob { transform: translateX(13px); }
+  .switch.small { width: 26px; height: 16px; }
+  .switch.small .knob { width: 12px; height: 12px; }
+  .switch.small.on .knob { transform: translateX(10px); }
+  .hint { margin: 0 4px; font-size: 11px; color: var(--muted); }
   .danger {
     border: 0; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 500;
     background: var(--chip); color: #ff453a; cursor: pointer; transition: all 0.15s;

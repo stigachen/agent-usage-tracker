@@ -80,6 +80,11 @@ async fn publish(app: &AppHandle, state: &AppState, fresh: Option<Vec<UsageSnaps
         *cache = snaps;
     }
     sort_snapshots(&mut cache, state, &cfg);
+    for s in cache.iter_mut() {
+        s.hidden = s.account_id.as_ref().is_some_and(|id| {
+            cfg.hidden.iter().any(|h| h.provider == s.provider_id && &h.id == id)
+        });
+    }
     update_tray(app, &cache, &cfg.tray_display);
     let _ = app.emit("usage-updated", cache.clone());
 }
@@ -123,7 +128,7 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
     publish(app, state, Some(snaps)).await;
 }
 
-/// Re-sorts the cached snapshots after an order change, without refetching.
+/// Re-applies order and visibility to the cached snapshots, without refetching.
 async fn resort(app: &AppHandle, state: &AppState) {
     publish(app, state, None).await;
 }
@@ -133,6 +138,27 @@ async fn set_provider_order(app: AppHandle, state: State<'_, Shared>, order: Vec
     {
         let mut st = state.store.write().await;
         st.config.provider_order = order;
+        st.save()?;
+    }
+    resort(&app, &state).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_account_hidden(
+    app: AppHandle,
+    state: State<'_, Shared>,
+    provider: String,
+    account: String,
+    hidden: bool,
+) -> Result<(), String> {
+    {
+        let mut st = state.store.write().await;
+        let acc = AccountRef { provider, id: account };
+        st.config.hidden.retain(|a| *a != acc);
+        if hidden {
+            st.config.hidden.push(acc);
+        }
         st.save()?;
     }
     resort(&app, &state).await;
@@ -187,7 +213,7 @@ async fn add_account(state: &AppState, provider: &str, id: &str) {
 fn tray_title(snaps: &[UsageSnapshot], display: &TrayDisplay) -> Option<String> {
     let remaining = match display {
         TrayDisplay::IconOnly => None,
-        TrayDisplay::Lowest => snaps.iter().filter_map(|s| s.min_remaining()).reduce(f64::min),
+        TrayDisplay::Lowest => snaps.iter().filter(|s| !s.hidden).filter_map(|s| s.min_remaining()).reduce(f64::min),
         TrayDisplay::Pinned { provider, account } => snaps
             .iter()
             .find(|s| &s.provider_id == provider && s.account_id.as_deref() == Some(account))
@@ -263,6 +289,7 @@ async fn logout(state: State<'_, Shared>, provider: String, account: String) -> 
     {
         let mut st = state.store.write().await;
         st.config.accounts.retain(|a| !(a.provider == provider && a.id == account));
+        st.config.hidden.retain(|a| !(a.provider == provider && a.id == account));
         if matches!(&st.config.tray_display, TrayDisplay::Pinned { provider: p, account: a } if *p == provider && *a == account) {
             st.config.tray_display = TrayDisplay::Lowest;
         }
@@ -377,6 +404,7 @@ pub fn run() {
             set_billing_token,
             set_provider_order,
             set_account_order,
+            set_account_hidden,
             get_tray_display,
             set_tray_display,
             get_refresh_secs,
