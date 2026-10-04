@@ -35,14 +35,39 @@ jobs:
       - if: runner.os == 'macOS'
         run: pnpm build
 
-      - name: Build Windows installer
+      - name: Build Windows executable
         if: runner.os == 'Windows'
-        run: pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
+        run: pnpm tauri build --target x86_64-pc-windows-msvc --no-bundle
 
-      - name: Upload Windows installer for testing
+      - name: Package portable Windows app
+        if: runner.os == 'Windows'
+        id: portable
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+
+      - name: Smoke-test extracted Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PORTABLE_ARCHIVE: ${{ steps.portable.outputs.archive }}
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP "Agent Usage portable test"
+          Expand-Archive -LiteralPath $env:PORTABLE_ARCHIVE -DestinationPath $directory -Force
+          $process = Start-Process -FilePath "$directory/Agent Usage.exe" -WorkingDirectory $env:RUNNER_TEMP -PassThru
+          try {
+            if ($process.WaitForExit(10000)) {
+              throw "Portable app exited during startup (exit code $($process.ExitCode))"
+            }
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
+
+      - name: Upload portable Windows app for testing
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: agent-usage-windows-x64
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+          name: agent-usage-windows-x64-portable
+          path: ${{ steps.portable.outputs.directory }}
           if-no-files-found: error

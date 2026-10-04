@@ -1,0 +1,25 @@
+Agent Usage - Windows x64 portable
+
+Extract the ZIP to a folder you want to keep, then double-click Agent Usage.exe.
+The app starts in the system tray; click its icon to open the panel. Check the
+hidden-icons overflow if the icon is not visible. No app installation or
+administrator rights are needed, and no Start menu shortcut is created.
+
+Requires Windows 10/11 x64 and Microsoft Edge WebView2 Runtime. Windows 11 and
+most Windows 10 systems already have the runtime. If it is missing, install
+Microsoft's Evergreen WebView2 Runtime from:
+https://developer.microsoft.com/microsoft-edge/webview2/#download-section
+This ZIP does not include or automatically install WebView2. Visual C++ runtime
+support is linked into the executable; no separate VC++ installation is needed.
+
+Settings are saved in %APPDATA%\com.stigachen.agentusage\config.json; sign-in
+tokens use Windows Credential Manager. Copying this folder to another computer
+does not copy accounts or settings.
+
+To update, choose Quit from the tray menu and replace Agent Usage.exe in the same
+folder. If Launch at login is enabled, keep the executable at that path. Before
+moving or deleting it, disable Launch at login; re-enable it after moving.
+To remove the app, quit and delete its folder. Saved user data remains; sign out
+of accounts in Settings first if you also want to remove their stored tokens.
+
+This build is unsigned.

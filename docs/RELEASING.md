@@ -1,7 +1,7 @@
 # Releasing
 
 GitHub Actions (`.github/workflows/release.yml`) produces a signed, notarized
-universal macOS build and an unsigned Windows x64 NSIS installer, attaching both
+universal macOS build and an unsigned Windows x64 portable ZIP, attaching both
 to the same draft release. Nothing needs to be signed locally.
 
 ## Cut a release
@@ -19,10 +19,11 @@ to the same draft release. Nothing needs to be signed locally.
 4. The macOS job builds a universal (Intel + Apple Silicon) app,
    signs it with the Developer ID certificate, notarizes and staples both the
    `.app` and the `.dmg`, then attaches them to a **draft** GitHub Release.
-   The Windows job then builds an x64 `-setup.exe` and uploads it to that exact
-   draft. Wait for both jobs before publishing.
+   The Windows job then builds an x64 executable and uploads
+   `Agent.Usage_<version>_windows_x64_portable.zip` to that exact draft.
+   Wait for both jobs before publishing.
 5. Check the draft on the [Releases page](../../releases), test the Windows
-   installer using the checklist below, edit the notes, then publish:
+   portable build using the checklist below, edit the notes, then publish:
    ```bash
    gh release edit v0.1.1 --draft=false --notes "..."
    ```
@@ -50,15 +51,20 @@ window movement; the pure geometry tests do not exercise that event ordering.
 
 ### Windows acceptance
 
-Download the `*-setup.exe` release asset. For changes before a release, download
-`agent-usage-windows-x64` from the CI workflow artifacts (PRs, `main`, or manual
-dispatch). CI builds and tests Windows independently of Apple's signing secrets.
+Download the `*_windows_x64_portable.zip` release asset. For changes before a
+release, download `agent-usage-windows-x64-portable` from the CI workflow artifacts
+(PRs, `main`, or manual dispatch). Extract the ZIP and run `Agent Usage.exe`.
+CI builds and tests Windows independently of Apple's signing secrets. It also
+extracts the release ZIP to a separate folder and checks that the executable
+stays running during startup, without running an installer. This is a startup
+smoke test, not validation of tray interaction or provider logins.
 
 Test on Windows 10 and Windows 11 before calling the Windows version stable:
 
-- Install as a standard user, launch from Start, and verify the tray icon in
-  light/dark themes and the hidden-icons overflow. Check WebView2 setup on a
-  machine without the runtime (network required).
+- Extract as a standard user and double-click `Agent Usage.exe`, including from
+  a path containing spaces. Verify the tray icon in light/dark themes and the
+  hidden-icons overflow. No application install, elevation, or Start shortcut
+  is needed. WebView2 Runtime must already be present; the ZIP does not install it.
 - Left-click to show/hide; right-click to open, refresh, and quit. Expand cards
   and Settings near a screen edge, on multiple monitors, and at 100% / 150% /
   200% display scaling. Open a tall panel from the hidden-icons overflow and
@@ -75,11 +81,21 @@ Test on Windows 10 and Windows 11 before calling the Windows version stable:
 - Minimize the panel through the system menu, then restore it by left-clicking
   the tray, selecting Open, and launching the app again. Each path should restore
   and focus the panel without needing a taskbar button.
-- Upgrade an existing install and uninstall; verify shortcuts and installer behavior.
+- Quit and replace the executable in the same folder; verify settings and tokens
+  persist. Disable Launch at login before moving or deleting the executable, then
+  re-enable it from the new location if needed. Copying the program to another
+  computer does not copy settings or credentials.
 
-The Windows installer is currently **unsigned** and may show SmartScreen or an
+The Windows executable is currently **unsigned** and may show SmartScreen or an
 unknown-publisher prompt. Windows code signing must be configured separately
 before distributing a signed build; the Apple secrets do not sign Windows.
+
+The app uses the system's Evergreen WebView2 Runtime. Windows 11 and most
+Windows 10 systems already include it; on systems without it, install Microsoft's
+[WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download-section)
+separately. See Microsoft's [runtime distribution documentation](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution).
+The Visual C++ runtime is statically linked and the MSVC WebView2 loader is linked
+into the executable, so the portable ZIP needs no additional app DLLs.
 
 ## Redo a failed release
 
@@ -115,11 +131,12 @@ App-specific passwords are created at <https://account.apple.com> → Sign-In an
 - macOS: `pnpm tauri build --bundles app` produces an unsigned app in
   `src-tauri/target/release/bundle/macos/`.
 - Windows (PowerShell, with Tauri's C++/MSVC prerequisites installed):
-  `pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis` produces
-  `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe`.
-  The Windows-specific config is merged automatically. It uses a current-user
-  install and downloads WebView2 when missing.
+  `pnpm tauri build --target x86_64-pc-windows-msvc --no-bundle` produces
+  `src-tauri/target/x86_64-pc-windows-msvc/release/agent-usage-tracker.exe`.
+  Run `./scripts/package-windows.ps1` from the repository root to create
+  `src-tauri/target/Agent.Usage_<version>_windows_x64_portable.zip`, containing
+  `Agent Usage.exe` and `README.txt`. The Windows-specific config disables
+  installer bundling and explicitly enables static Visual C++ runtime linking.
 
-See [Tauri's Windows installer documentation](https://v2.tauri.app/distribute/windows-installer/)
-for installer and signing options. Prefer a Windows machine or the CI runner for
-Windows packaging; a successful macOS build does not validate Windows behavior.
+Use a Windows machine or the CI runner for Windows builds and packaging;
+a successful macOS build does not validate Windows behavior.

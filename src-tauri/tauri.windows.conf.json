@@ -1,17 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "bundle": {
-    "targets": ["nsis"],
+  "build": {
     "windows": {
-      "webviewInstallMode": {
-        "type": "downloadBootstrapper",
-        "silent": true
-      },
-      "nsis": {
-        "installMode": "currentUser",
-        "languages": ["English", "SimpChinese"],
-        "displayLanguageSelector": true
-      }
+      "staticVCRuntime": true
     }
+  },
+  "bundle": {
+    "active": false
   }
 }

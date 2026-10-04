@@ -1,4 +1,4 @@
-# Builds a signed + notarized universal macOS dmg and an unsigned Windows x64 installer.
+# Builds a signed + notarized universal macOS dmg and an unsigned Windows x64 portable ZIP.
 # Trigger: push a tag like v0.1.0, or run manually from the Actions tab.
 name: Release
 
@@ -90,10 +90,21 @@ jobs:
       - run: pnpm check
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build Windows executable
+        run: pnpm tauri build --target x86_64-pc-windows-msvc --no-bundle
+
+      - name: Package portable Windows app
+        id: portable
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+
+      - name: Upload portable ZIP to the macOS draft release
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.macos.outputs.release_id }}
-          releaseDraft: true
-          args: --target x86_64-pc-windows-msvc --bundles nsis
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.macos.outputs.release_id }}
+          PORTABLE_ARCHIVE: ${{ steps.portable.outputs.archive }}
+        run: |
+          $tag = gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID" --jq .tag_name
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release upload "$tag" "$env:PORTABLE_ARCHIVE" --clobber
