@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+  import { currentMonitor, getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import ProviderCard from "$lib/ProviderCard.svelte";
   import Overview from "$lib/Overview.svelte";
@@ -10,6 +10,7 @@
   import type { UsageSnapshot } from "$lib/types";
 
   const MAX_HEIGHT = 600;
+  let maxHeight = $state(MAX_HEIGHT);
   let snaps = $state<UsageSnapshot[]>([]);
   let mainEl: HTMLElement;
   let refreshing = $state(false);
@@ -67,6 +68,13 @@
     };
     onVis();
     document.addEventListener("visibilitychange", onVis);
+    const win = getCurrentWindow();
+    const fitToMonitor = async () => {
+      const monitor = await currentMonitor().catch(() => null);
+      // Monitor sizes are physical pixels; window and CSS sizes are logical pixels.
+      if (monitor) maxHeight = Math.min(MAX_HEIGHT, Math.floor(monitor.workArea.size.height / monitor.scaleFactor) - 16);
+    };
+    fitToMonitor();
     const un = [
       listen<UsageSnapshot[]>("usage-updated", (e) => {
         snaps = e.payload;
@@ -77,12 +85,13 @@
       listen("panel-shown", () => {
         refreshing = true;
         showSettings = false;
+        fitToMonitor();
       }),
+      win.onScaleChanged(fitToMonitor),
     ];
     // Fit the window to its content so there is no empty space below the cards.
-    const win = getCurrentWindow();
     const ro = new ResizeObserver(() => {
-      const h = Math.min(Math.ceil(mainEl.scrollHeight), MAX_HEIGHT);
+      const h = Math.min(Math.ceil(mainEl.scrollHeight), maxHeight);
       win.setSize(new LogicalSize(360, h));
     });
     ro.observe(mainEl);
@@ -100,7 +109,7 @@
   }
 </script>
 
-<main bind:this={mainEl}>
+<main bind:this={mainEl} style:max-height={`${maxHeight}px`}>
   {#if showSettings}
     <Settings {snaps} initialPage={settingsPage} onclose={() => (showSettings = false)} />
   {:else}

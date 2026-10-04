@@ -24,6 +24,7 @@
   let confirming = $state<string | null>(null);
   let error = $state<string | null>(null);
   let version = $state("");
+  let platform = $state("");
   const REPO = "https://github.com/stigachen/agent-usage-tracker";
 
   let accounts = $derived(snaps.filter((s) => s.accountId));
@@ -48,6 +49,7 @@
 
   onMount(async () => {
     getVersion().then((v) => (version = v));
+    invoke<string>("get_platform").then((p) => (platform = p));
     const [d, secs, auto] = await Promise.all([
       invoke<TrayDisplay>("get_tray_display"),
       invoke<number>("get_refresh_secs"),
@@ -127,7 +129,7 @@
   }
 </script>
 
-<div class="settings" in:fly={{ x: 12, duration: 180 }}>
+<div class="settings" class:windows={platform === "windows"} in:fly={{ x: 12, duration: 180 }}>
   <div class="top">
     <button class="back" onclick={onclose} aria-label="Back">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -145,7 +147,10 @@
 
   {#if page === "general"}
   <section>
-    <h3>Menu bar</h3>
+    <h3>{platform === "windows" ? "System tray" : "Menu bar"}</h3>
+    {#if platform === "windows"}
+      <p class="hint">Hover over the tray icon to see the selected remaining quota.</p>
+    {/if}
     <div class="group">
       <label class="row">
         <span>Show</span>
@@ -256,7 +261,7 @@
             <div class="pat">
               <span class="muted">
                 Create a classic token with the <b>user</b> scope while signed in to GitHub as
-                <b>@{s.account}</b>. It is stored in the system keychain and only used to read billing.
+                <b>@{s.account}</b>. It is stored in the system credential store and only used to read billing.
               </span>
               <button class="link" onclick={() => invoke("open_url", { url: PAT_URL })}>Create token on GitHub ↗</button>
               <div class="pat-row">
@@ -316,6 +321,14 @@
   select {
     font: inherit; font-size: 12px; color: var(--fg); background: var(--chip);
     border: 0; border-radius: 6px; padding: 3px 6px; max-width: 190px; cursor: pointer;
+  }
+  /* WebView2 popups need an opaque surface; --chip is translucent. */
+  .windows { --select-bg: #f2f2f7; }
+  @media (prefers-color-scheme: dark) {
+    .windows { --select-bg: #2c2c2e; }
+  }
+  .windows select, .windows option {
+    color: var(--fg); background-color: var(--select-bg);
   }
   .switch {
     position: relative; width: 32px; height: 19px; border: 0; border-radius: 99px; flex: none;
