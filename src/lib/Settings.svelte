@@ -129,7 +129,7 @@
   }
 </script>
 
-<div class="settings" in:fly={{ x: 12, duration: 180 }}>
+<div class="settings" class:windows={platform === "windows"} in:fly={{ x: 12, duration: 180 }}>
   <div class="top">
     <button class="back" onclick={onclose} aria-label="Back">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -321,6 +321,14 @@
   select {
     font: inherit; font-size: 12px; color: var(--fg); background: var(--chip);
     border: 0; border-radius: 6px; padding: 3px 6px; max-width: 190px; cursor: pointer;
+  }
+  /* WebView2 popups need an opaque surface; --chip is translucent. */
+  .windows { --select-bg: #f2f2f7; }
+  @media (prefers-color-scheme: dark) {
+    .windows { --select-bg: #2c2c2e; }
+  }
+  .windows select, .windows option {
+    color: var(--fg); background-color: var(--select-bg);
   }
   .switch {
     position: relative; width: 32px; height: 19px; border: 0; border-radius: 99px; flex: none;

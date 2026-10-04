@@ -71,6 +71,10 @@ Test on Windows 10 and Windows 11 before calling the Windows version stable:
   check that it stays within the work area, clear of bottom/top/side taskbars.
 - Check lowest/pinned/icon-only preferences in the tooltip. Switch the system
   theme while the app is running.
+- Open both Settings dropdowns (Show and Refresh every) in light and dark mode,
+  including after changing the system theme without restarting. All options,
+  including unselected accounts, must stay readable. Check mouse selection and
+  keyboard navigation, and repeat with Windows contrast themes enabled.
 - Sign in to Copilot and open the billing token creation link; confirm both
   query parameters reach the browser. Restart to verify credential persistence.
 - Verify native Windows CLI discovery for Codex, Claude Code, and Grok. WSL
