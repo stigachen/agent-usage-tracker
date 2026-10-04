@@ -249,6 +249,7 @@ fn tray_tooltip(title: Option<&str>) -> String {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn constrain_panel_position(
     position: tauri::PhysicalPosition<i32>,
     size: tauri::PhysicalSize<u32>,
@@ -269,6 +270,7 @@ fn constrain_panel_position(
 
 fn position_panel(win: &tauri::Window) -> tauri::Result<()> {
     // Use the tray's monitor even when the panel was last opened on another one.
+    #[cfg(target_os = "windows")]
     let tray_monitor = win.app_handle().tray_by_id(TRAY_ID)
         .and_then(|tray| tray.rect().ok().flatten())
         .and_then(|rect| {
@@ -280,16 +282,22 @@ fn position_panel(win: &tauri::Window) -> tauri::Result<()> {
     if win.move_window_constrained(Position::TrayCenter).is_err() {
         win.center()?;
     }
-    let monitor = match tray_monitor {
-        Some(monitor) => Some(monitor),
-        None => win.current_monitor()?,
-    };
-    if let Some(monitor) = monitor {
-        // The positioner only constrains to the full screen, including taskbars.
-        let position = win.outer_position()?;
-        let constrained = constrain_panel_position(position, win.outer_size()?, monitor.work_area());
-        if constrained != position {
-            win.set_position(constrained)?;
+    // Tao queues macOS moves asynchronously. Reading outer_position here would
+    // see the old location and queue a second move that overwrites the tray anchor.
+    // Only Windows applies this extra taskbar/work-area correction.
+    #[cfg(target_os = "windows")]
+    {
+        let monitor = match tray_monitor {
+            Some(monitor) => Some(monitor),
+            None => win.current_monitor()?,
+        };
+        if let Some(monitor) = monitor {
+            // The positioner only constrains to the full screen, including taskbars.
+            let position = win.outer_position()?;
+            let constrained = constrain_panel_position(position, win.outer_size()?, monitor.work_area());
+            if constrained != position {
+                win.set_position(constrained)?;
+            }
         }
     }
     Ok(())

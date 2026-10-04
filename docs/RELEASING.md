@@ -40,6 +40,14 @@ spctl -a -vv -t open --context context:primary-signature Agent.Usage_*.dmg
 
 Both should report `accepted` / `source=Notarized Developer ID`.
 
+### macOS panel regression checks
+
+With menu bars available on two displays, open and dismiss the panel on display
+A, then open it from the menu bar icon on display B. Check that it stays beside
+that icon, including after expanding cards or opening Settings. Repeat in both
+directions and with different display scales. This checks native asynchronous
+window movement; the pure geometry tests do not exercise that event ordering.
+
 ### Windows acceptance
 
 Download the `*-setup.exe` release asset. For changes before a release, download
