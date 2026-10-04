@@ -24,6 +24,7 @@
   let confirming = $state<string | null>(null);
   let error = $state<string | null>(null);
   let version = $state("");
+  let platform = $state("");
   const REPO = "https://github.com/stigachen/agent-usage-tracker";
 
   let accounts = $derived(snaps.filter((s) => s.accountId));
@@ -48,6 +49,7 @@
 
   onMount(async () => {
     getVersion().then((v) => (version = v));
+    invoke<string>("get_platform").then((p) => (platform = p));
     const [d, secs, auto] = await Promise.all([
       invoke<TrayDisplay>("get_tray_display"),
       invoke<number>("get_refresh_secs"),
@@ -145,7 +147,10 @@
 
   {#if page === "general"}
   <section>
-    <h3>Menu bar</h3>
+    <h3>{platform === "windows" ? "System tray" : "Menu bar"}</h3>
+    {#if platform === "windows"}
+      <p class="hint">Hover over the tray icon to see the selected remaining quota.</p>
+    {/if}
     <div class="group">
       <label class="row">
         <span>Show</span>
@@ -256,7 +261,7 @@
             <div class="pat">
               <span class="muted">
                 Create a classic token with the <b>user</b> scope while signed in to GitHub as
-                <b>@{s.account}</b>. It is stored in the system keychain and only used to read billing.
+                <b>@{s.account}</b>. It is stored in the system credential store and only used to read billing.
               </span>
               <button class="link" onclick={() => invoke("open_url", { url: PAT_URL })}>Create token on GitHub ↗</button>
               <div class="pat-row">

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - if: runner.os == 'macOS'
+        run: pnpm build
+
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        run: pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Upload Windows installer for testing
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-usage-windows-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
