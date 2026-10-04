@@ -53,7 +53,8 @@ Test on Windows 10 and Windows 11 before calling the Windows version stable:
   machine without the runtime (network required).
 - Left-click to show/hide; right-click to open, refresh, and quit. Expand cards
   and Settings near a screen edge, on multiple monitors, and at 100% / 150% /
-  200% display scaling. Check that the panel remains visible.
+  200% display scaling. Open a tall panel from the hidden-icons overflow and
+  check that it stays within the work area, clear of bottom/top/side taskbars.
 - Check lowest/pinned/icon-only preferences in the tooltip. Switch the system
   theme while the app is running.
 - Sign in to Copilot and open the billing token creation link; confirm both
@@ -63,6 +64,9 @@ Test on Windows 10 and Windows 11 before calling the Windows version stable:
   tested against a real account.
 - Enable/disable Launch at login and sign back into Windows. Start the app twice
   to verify a single tray icon; Alt+F4 should hide the panel, and Quit should exit.
+- Minimize the panel through the system menu, then restore it by left-clicking
+  the tray, selecting Open, and launching the app again. Each path should restore
+  and focus the panel without needing a taskbar button.
 - Upgrade an existing install and uninstall; verify shortcuts and installer behavior.
 
 The Windows installer is currently **unsigned** and may show SmartScreen or an

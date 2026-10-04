@@ -249,12 +249,57 @@ fn tray_tooltip(title: Option<&str>) -> String {
     }
 }
 
-fn show_panel(app: &AppHandle) {
-    let Some(win) = app.get_webview_window("main") else { return };
+fn constrain_panel_position(
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    work_area: &tauri::PhysicalRect<i32, u32>,
+) -> tauri::PhysicalPosition<i32> {
+    // A panel can briefly exceed the work area while the frontend adapts to a
+    // smaller monitor. Anchor that axis at the work area's origin until it fits.
+    let clamp_axis = |value: i32, origin: i32, available: u32, required: u32| {
+        let min = i64::from(origin);
+        let max = min + i64::from(available.saturating_sub(required));
+        i64::from(value).clamp(min, max) as i32
+    };
+    tauri::PhysicalPosition::new(
+        clamp_axis(position.x, work_area.position.x, work_area.size.width, size.width),
+        clamp_axis(position.y, work_area.position.y, work_area.size.height, size.height),
+    )
+}
+
+fn position_panel(win: &tauri::Window) -> tauri::Result<()> {
+    // Use the tray's monitor even when the panel was last opened on another one.
+    let tray_monitor = win.app_handle().tray_by_id(TRAY_ID)
+        .and_then(|tray| tray.rect().ok().flatten())
+        .and_then(|rect| {
+            // Tray rectangles use physical pixels, like window geometry and work_area.
+            let position = rect.position.to_physical::<f64>(1.0);
+            win.monitor_from_point(position.x, position.y).ok().flatten()
+        });
     // Before the first tray event (e.g. a second launch), its position is unknown.
     if win.move_window_constrained(Position::TrayCenter).is_err() {
-        let _ = win.center();
+        win.center()?;
     }
+    let monitor = match tray_monitor {
+        Some(monitor) => Some(monitor),
+        None => win.current_monitor()?,
+    };
+    if let Some(monitor) = monitor {
+        // The positioner only constrains to the full screen, including taskbars.
+        let position = win.outer_position()?;
+        let constrained = constrain_panel_position(position, win.outer_size()?, monitor.work_area());
+        if constrained != position {
+            win.set_position(constrained)?;
+        }
+    }
+    Ok(())
+}
+
+fn show_panel(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("main") else { return };
+    // show() preserves the minimized state, and Windows won't focus a minimized window.
+    let _ = win.unminimize();
+    let _ = position_panel(&win.as_ref().window());
     let _ = win.show();
     let _ = win.set_focus();
     let _ = app.emit("panel-shown", ());
@@ -281,7 +326,9 @@ fn toggle_panel(app: &AppHandle) {
         .unwrap()
         .take()
         .is_some_and(|t| t.elapsed() < Duration::from_millis(300));
-    if win.is_visible().unwrap_or(false) {
+    if win.is_minimized().unwrap_or(false) {
+        show_panel(app);
+    } else if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
     } else if !just_hidden {
         show_panel(app);
@@ -543,9 +590,9 @@ pub fn run() {
                     api.prevent_close();
                     let _ = win.hide();
                 }
-                WindowEvent::Resized(_) if win.is_visible().unwrap_or(false) => {
+                WindowEvent::Resized(_) if win.is_visible().unwrap_or(false) && !win.is_minimized().unwrap_or(false) => {
                     // Keep the bottom-anchored Windows panel on screen as its content grows.
-                    let _ = win.move_window_constrained(Position::TrayCenter);
+                    let _ = position_panel(win);
                 }
                 #[cfg(target_os = "windows")]
                 WindowEvent::ThemeChanged(theme) => {
@@ -564,6 +611,68 @@ pub fn run() {
 mod tests {
     use super::*;
     use providers::UsageWindow;
+
+    #[test]
+    fn tray_overflow_panel_stays_above_bottom_taskbar() {
+        // TrayCenter can place the panel below an overflow icon, then clamp it to
+        // y=480 on a 1080px screen. The bottom 40px belong to the taskbar.
+        let work_area = tauri::PhysicalRect {
+            position: tauri::PhysicalPosition::new(0, 0),
+            size: tauri::PhysicalSize::new(1920, 1040),
+        };
+        let position = constrain_panel_position(
+            tauri::PhysicalPosition::new(1510, 480),
+            tauri::PhysicalSize::new(360, 600),
+            &work_area,
+        );
+        assert_eq!(position, tauri::PhysicalPosition::new(1510, 440));
+    }
+
+    #[test]
+    fn panel_respects_top_and_side_taskbars() {
+        for (origin, available, desired, expected) in [
+            ((0, 40), (1920, 1040), (500, 0), (500, 40)),
+            ((80, 0), (1840, 1080), (0, 400), (80, 400)),
+            ((0, 0), (1840, 1080), (1560, 400), (1480, 400)),
+        ] {
+            let work_area = tauri::PhysicalRect {
+                position: tauri::PhysicalPosition::from(origin),
+                size: tauri::PhysicalSize::from(available),
+            };
+            assert_eq!(
+                constrain_panel_position(desired.into(), (360, 600).into(), &work_area),
+                tauri::PhysicalPosition::from(expected),
+            );
+        }
+    }
+
+    #[test]
+    fn panel_uses_physical_pixels_and_signed_monitor_coordinates() {
+        // A secondary monitor above/left of the primary, at 150% scale.
+        let work_area = tauri::PhysicalRect {
+            position: tauri::PhysicalPosition::new(-1920, -1080),
+            size: tauri::PhysicalSize::new(1920, 1040),
+        };
+        let size = tauri::PhysicalSize::new(540, 900);
+        assert_eq!(
+            constrain_panel_position((-200, -900).into(), size, &work_area),
+            tauri::PhysicalPosition::new(-540, -940),
+        );
+        let inside = tauri::PhysicalPosition::new(-1000, -1000);
+        assert_eq!(constrain_panel_position(inside, size, &work_area), inside);
+    }
+
+    #[test]
+    fn oversized_panel_anchors_inside_work_area_until_resized() {
+        let work_area = tauri::PhysicalRect {
+            position: tauri::PhysicalPosition::new(0, 40),
+            size: tauri::PhysicalSize::new(320, 440),
+        };
+        assert_eq!(
+            constrain_panel_position((-40, -120).into(), (360, 600).into(), &work_area),
+            work_area.position,
+        );
+    }
 
     fn snapshot(account: &str, used: f64) -> UsageSnapshot {
         let mut snap = UsageSnapshot::empty(&providers::copilot::Copilot, Some(account));
