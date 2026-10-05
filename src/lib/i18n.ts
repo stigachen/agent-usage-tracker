@@ -124,7 +124,7 @@ export function translate(locale: Locale, message: Message, params: Params = {})
 
 export function providerText(locale: Locale, text: string): string {
   if (locale === "en") return text;
-  if (Object.hasOwn(zhCN, text)) return translate(locale, text as Message);
+  if (Object.prototype.hasOwnProperty.call(zhCN, text)) return translate(locale, text as Message);
   let match = /^(\d+)-hour limit$/.exec(text);
   if (match) return translate(locale, "{hours}-hour limit", { hours: match[1] });
   match = /^(\d+)-day limit$/.exec(text);
