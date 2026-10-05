@@ -4,6 +4,17 @@ macOS 菜单栏和 Windows 托盘应用，用于查看各家 coding agent 的用
 
 技术栈：Tauri 2 + Svelte 5 + Rust
 
+## 界面语言
+
+在 **Settings → General → Language**（设置 → 通用 → 语言）中选择 **English**、
+**简体中文**或**跟随系统**，修改后立即生效，macOS 和 Windows 使用相同的设置。
+默认跟随系统的首选界面语言；简体中文（`zh-CN`、`zh-SG`、`zh-Hans`）使用中文，
+其他语言（包括繁体中文）使用英文兜底。应用启动和打开面板时会重新读取系统语言。
+
+语言偏好保存在 `config.json` 的 `language` 字段中（`system` / `en` / `zh-CN`）。
+旧配置缺少该字段时默认为 `system`，账号和其他设置保持不变。
+服务名称、模型名称以及未识别的服务端错误详情保留原文。
+
 ## 支持的 Provider
 
 | Provider | 状态 |

@@ -1,6 +1,8 @@
+mod localization;
 mod providers;
 mod store;
 
+use localization::{Language, LanguageSettings, Locale};
 use providers::{DeviceCode, Provider, UsageSnapshot};
 use store::{AccountRef, Store, TrayDisplay};
 use std::sync::Arc;
@@ -14,6 +16,20 @@ use tauri_plugin_positioner::{Position, WindowExt};
 use tokio::sync::{Notify, RwLock};
 
 const TRAY_ID: &str = "main";
+
+#[cfg(target_os = "windows")]
+struct TrayMenu {
+    items: [tauri::menu::MenuItem<tauri::Wry>; 3],
+}
+
+#[cfg(target_os = "windows")]
+fn update_tray_menu(app: &AppHandle, locale: Locale) {
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        for (item, label) in menu.items.iter().zip(locale.tray_menu_labels()) {
+            let _ = item.set_text(label);
+        }
+    }
+}
 
 /// When the panel was last hidden by losing focus. Clicking the tray icon blurs the
 /// panel before the click event arrives, so without this the click would reopen it.
@@ -75,18 +91,21 @@ fn sort_snapshots(snaps: &mut [UsageSnapshot], state: &AppState, cfg: &store::Co
 /// Everything happens under the snapshots write lock so a refresh and a re-sort can't
 /// interleave and publish an older copy last.
 async fn publish(app: &AppHandle, state: &AppState, fresh: Option<Vec<UsageSnapshot>>) {
-    let cfg = state.store.read().await.config.clone();
+    // Keep settings stable through the tray update so an in-flight refresh can't
+    // put an old language back after set_language has completed.
+    let store = state.store.read().await;
+    let cfg = &store.config;
     let mut cache = state.snapshots.write().await;
     if let Some(snaps) = fresh {
         *cache = snaps;
     }
-    sort_snapshots(&mut cache, state, &cfg);
+    sort_snapshots(&mut cache, state, cfg);
     for s in cache.iter_mut() {
         s.hidden = s.account_id.as_ref().is_some_and(|id| {
             cfg.hidden.iter().any(|h| h.provider == s.provider_id && &h.id == id)
         });
     }
-    update_tray(app, &cache, &cfg.tray_display);
+    update_tray(app, &cache, &cfg.tray_display, cfg.language.settings().locale);
     let _ = app.emit("usage-updated", cache.clone());
 }
 
@@ -233,20 +252,15 @@ fn tray_title(snaps: &[UsageSnapshot], display: &TrayDisplay) -> Option<String> 
     remaining.map(|r| format!("{:.0}%", (r * 100.0).floor()))
 }
 
-fn update_tray(app: &AppHandle, snaps: &[UsageSnapshot], display: &TrayDisplay) {
+fn update_tray(app: &AppHandle, snaps: &[UsageSnapshot], display: &TrayDisplay, locale: Locale) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
     let title = tray_title(snaps, display);
     // Windows tray icons have no title; expose the same preference in the tooltip.
     #[cfg(target_os = "macos")]
     let _ = tray.set_title(title.as_deref());
-    let _ = tray.set_tooltip(Some(tray_tooltip(title.as_deref())));
-}
-
-fn tray_tooltip(title: Option<&str>) -> String {
-    match title {
-        Some(title) => format!("Agent Usage — {title} remaining"),
-        None => "Agent Usage".into(),
-    }
+    let _ = tray.set_tooltip(Some(locale.tray_tooltip(title.as_deref())));
+    #[cfg(target_os = "windows")]
+    update_tray_menu(app, locale);
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -434,8 +448,26 @@ async fn set_tray_display(
         st.config.tray_display = display.clone();
         st.save()?;
     }
-    update_tray(&app, &state.snapshots.read().await, &display);
+    sync_language(&app, &state).await;
     Ok(())
+}
+
+async fn sync_language(app: &AppHandle, state: &AppState) -> LanguageSettings {
+    let store = state.store.read().await;
+    let settings = store.config.language.settings();
+    update_tray(app, &state.snapshots.read().await, &store.config.tray_display, settings.locale);
+    settings
+}
+
+#[tauri::command]
+async fn get_language(app: AppHandle, state: State<'_, Shared>) -> Result<LanguageSettings, ()> {
+    Ok(sync_language(&app, &state).await)
+}
+
+#[tauri::command]
+async fn set_language(app: AppHandle, state: State<'_, Shared>, language: Language) -> Result<LanguageSettings, String> {
+    state.store.write().await.set_language(language)?;
+    Ok(sync_language(&app, &state).await)
 }
 
 #[tauri::command]
@@ -514,6 +546,8 @@ pub fn run() {
             set_tray_display,
             get_refresh_secs,
             set_refresh_secs,
+            get_language,
+            set_language,
             get_platform,
             open_url,
             quit
@@ -548,10 +582,13 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             let tray = {
                 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-                let open = MenuItem::with_id(app, "open", "Open Agent Usage", true, None::<&str>)?;
-                let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
-                let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let locale = state.store.try_read().unwrap().config.language.settings().locale;
+                let [open_label, refresh_label, quit_label] = locale.tray_menu_labels();
+                let open = MenuItem::with_id(app, "open", open_label, true, None::<&str>)?;
+                let refresh = MenuItem::with_id(app, "refresh", refresh_label, true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&open, &refresh, &PredefinedMenuItem::separator(app)?, &quit])?;
+                app.manage(TrayMenu { items: [open, refresh, quit] });
                 tray.menu(&menu).on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_panel(app),
                     "refresh" => app.state::<Shared>().wake.notify_one(),
@@ -725,9 +762,9 @@ mod tests {
     fn tooltip_clears_quota_for_icon_only_or_missing_data() {
         let snaps = [snapshot("alice", 25.0)];
         let title = tray_title(&snaps, &TrayDisplay::Lowest);
-        assert_eq!(tray_tooltip(title.as_deref()), "Agent Usage — 75% remaining");
-        assert_eq!(tray_tooltip(tray_title(&snaps, &TrayDisplay::IconOnly).as_deref()), "Agent Usage");
-        assert_eq!(tray_tooltip(tray_title(&[], &TrayDisplay::Lowest).as_deref()), "Agent Usage");
+        assert_eq!(Locale::English.tray_tooltip(title.as_deref()), "Agent Usage — 75% remaining");
+        assert_eq!(Locale::English.tray_tooltip(tray_title(&snaps, &TrayDisplay::IconOnly).as_deref()), "Agent Usage");
+        assert_eq!(Locale::English.tray_tooltip(tray_title(&[], &TrayDisplay::Lowest).as_deref()), "Agent Usage");
     }
 
     #[test]

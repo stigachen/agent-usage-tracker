@@ -5,6 +5,8 @@
   import ProviderIcon from "./ProviderIcon.svelte";
   import { Reorder } from "./reorder.svelte";
   import type { UsageSnapshot } from "./types";
+  import { language, localize, t } from "./language";
+  import { resetText } from "./i18n";
 
   let {
     snaps,
@@ -49,18 +51,10 @@
 
   const tone = (left: number) => (left <= 10 ? "danger" : left <= 30 ? "warn" : "ok");
 
-  function resetIn(iso: string | null) {
-    if (!iso) return "";
-    const ms = new Date(iso).getTime() - now;
-    if (ms <= 0) return "soon";
-    const d = Math.floor(ms / 86_400_000);
-    const h = Math.floor((ms % 86_400_000) / 3_600_000);
-    return d > 0 ? `${d}d ${h}h` : `${h}h`;
-  }
 </script>
 
 {#if !snaps.length && hiddenCount}
-  <div class="empty muted small">All accounts are hidden from the overview.</div>
+  <div class="empty muted small">{$t("All accounts are hidden from the overview.")}</div>
 {/if}
 <div class="list" class:empty-list={!snaps.length} class:sortable={groups.length > 1} role="list" data-reorder-list>
   {#each shown as g, gi (g.id)}
@@ -76,8 +70,8 @@
       class="handle"
       role="button"
       tabindex="-1"
-      aria-label="Drag to reorder"
-      title="Drag to reorder"
+      aria-label={$t("Drag to reorder")}
+      title={$t("Drag to reorder")}
       onpointerdown={(e) => reorder.start(e, g.id, groups.map((x) => x.id))}
     ><svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg></span>
   {/if}
@@ -91,16 +85,16 @@
           {#if s.account}<span class="muted acc">{s.account}</span>{/if}
         </div>
         {#if s.needsAuth || !s.accountId}
-          <span class="muted small">Not connected</span>
+          <span class="muted small">{$t("Not connected")}</span>
         {:else if s.error}
-          <span class="err small">Couldn't load</span>
+          <span class="err small">{$t("Couldn't load")}</span>
         {:else if worst && left !== null}
           <div class="bar"><div class="fill {tone(left)}" style:width="{Math.max(100 - left, 1.5)}%"></div></div>
-          <span class="muted small">{worst.label}{worst.resetsAt ? ` · resets in ${resetIn(worst.resetsAt)}` : ""}</span>
+          <span class="muted small">{$localize(worst.label)}{worst.resetsAt ? ` · ${resetText($language.locale, worst.resetsAt, now)}` : ""}</span>
         {:else if s.note}
-          <span class="muted small">No usage data</span>
+          <span class="muted small">{$t("No usage data")}</span>
         {:else}
-          <span class="muted small">Unlimited</span>
+          <span class="muted small">{$t("Unlimited")}</span>
         {/if}
       </div>
       {#if left !== null && !s.needsAuth && !s.error}
@@ -115,10 +109,10 @@
 {#if more.length || hiddenCount}
   <div class="more">
     {#if hiddenCount}
-      <button class="chip" onclick={onsettings}>{hiddenCount} hidden</button>
+      <button class="chip" onclick={onsettings}>{$t("{count} hidden", { count: hiddenCount })}</button>
     {/if}
     {#if more.length}
-    <span class="muted small">Connect</span>
+    <span class="muted small">{$t("Connect")}</span>
     {#each more as s (s.providerId)}
       <button class="chip" onclick={() => onselect(s.providerId)}>
         <ProviderIcon id={s.providerId} size={12} />{s.providerName}

@@ -5,6 +5,8 @@
   import { Reorder } from "./reorder.svelte";
   import ProviderIcon from "./ProviderIcon.svelte";
   import type { DeviceCode, UsageSnapshot } from "./types";
+  import { language, localize, t } from "./language";
+  import { resetText } from "./i18n";
 
   let { snaps, now }: { snaps: UsageSnapshot[]; now: number } = $props();
   let first = $derived(snaps[0]);
@@ -19,24 +21,19 @@
   let copied = $state(false);
   let confirming = $state<string | null>(null);
 
-  const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-  const usd = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+  const fmt = $derived(new Intl.NumberFormat($language.locale, { maximumFractionDigits: 0 }));
+  const usd = $derived(new Intl.NumberFormat($language.locale, { style: "currency", currency: "USD" }));
   let expanded = $state<Record<string, boolean>>({});
   // Providers that only report percentages use limit = 100.
   const isPct = (w: { limit: number | null }) => w.limit === 100;
   const prettyPlan = (p: string) => p.replace(/_/g, " ");
 
   function resetIn(iso: string | null): string {
-    if (!iso) return "";
-    const ms = new Date(iso).getTime() - now;
-    if (ms <= 0) return "Resets soon";
-    const d = Math.floor(ms / 86_400_000);
-    const h = Math.floor((ms % 86_400_000) / 3_600_000);
-    return d > 0 ? `Resets in ${d}d ${h}h` : `Resets in ${h}h`;
+    return resetText($language.locale, iso, now);
   }
 
   const resetDate = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" }) : "";
+    iso ? new Date(iso).toLocaleDateString($language.locale, { month: "short", day: "numeric" }) : "";
 
   function quotas(snap: UsageSnapshot) {
     const limited = snap.windows.filter((w) => w.limit);
@@ -98,10 +95,10 @@
     <div class="logo"><ProviderIcon id={first.providerId} /></div>
     <div class="title">
       <h2>{first.providerName}</h2>
-      {#if accounts.length > 1}<span class="sub">{accounts.length} accounts</span>{/if}
+      {#if accounts.length > 1}<span class="sub">{$t("{count} accounts", { count: accounts.length })}</span>{/if}
     </div>
     {#if accounts.length && !login && !first.managed}
-      <button class="ghost show" onclick={signIn} title="Add account" aria-label="Add account">
+      <button class="ghost show" onclick={signIn} title={$t("Add account")} aria-label={$t("Add account")}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
     {/if}
@@ -109,16 +106,16 @@
 
   {#if login}
     <div class="login">
-      <span class="muted small">Enter this code on GitHub</span>
-      <button class="code" onclick={copyCode} title="Copy">{login.userCode}</button>
-      <span class="muted small">{copied ? "Copied to clipboard" : "Waiting for authorization…"}</span>
+      <span class="muted small">{$t("Enter this code on GitHub")}</span>
+      <button class="code" onclick={copyCode} title={$t("Copy")}>{login.userCode}</button>
+      <span class="muted small">{$t(copied ? "Copied to clipboard" : "Waiting for authorization…")}</span>
     </div>
   {:else if !accounts.length && first.loginHint}
-    <div class="hint">{first.loginHint}</div>
+    <div class="hint">{$localize(first.loginHint)}</div>
   {:else if !accounts.length}
-    <button class="primary" onclick={signIn}>Sign in with GitHub</button>
+    <button class="primary" onclick={signIn}>{$t("Sign in with GitHub")}</button>
   {/if}
-  {#if loginError}<p class="error">{loginError}</p>{/if}
+  {#if loginError}<p class="error">{$localize(loginError)}</p>{/if}
 
   <div class="accounts" role="list" data-reorder-list>
   {#each shown as snap (snap.accountId)}
@@ -136,9 +133,9 @@
         {#if snap.managed}
           <span></span>
         {:else if confirming === snap.accountId}
-          <button class="armed" onclick={() => signOut(snap)}>Sign out?</button>
+          <button class="armed" onclick={() => signOut(snap)}>{$t("Sign out?")}</button>
         {:else}
-        <button class="ghost" onclick={() => signOut(snap)} title="Sign out" aria-label="Sign out @{snap.account}">
+        <button class="ghost" onclick={() => signOut(snap)} title={$t("Sign out")} aria-label={$t("Sign out @{account}", { account: snap.account ?? "" })}>
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
         {/if}
@@ -147,25 +144,25 @@
             class="handle"
             role="button"
             tabindex="-1"
-            aria-label="Drag to reorder"
-            title="Drag to reorder"
+            aria-label={$t("Drag to reorder")}
+            title={$t("Drag to reorder")}
             onpointerdown={(e) => reorder.start(e, snap.accountId!, accounts.map((a) => a.accountId!))}
           ><svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg></span>
         {/if}
       </div>
 
       {#if snap.needsAuth}
-        <div class="error-box"><span>Session expired</span><span class="muted small">{snap.loginHint ?? "Sign out and add the account again."}</span></div>
+        <div class="error-box"><span>{$t("Session expired")}</span><span class="muted small">{snap.loginHint ? $localize(snap.loginHint) : $t("Sign out and add the account again.")}</span></div>
       {:else if snap.error}
         <div class="error-box">
-          <span>Couldn't load usage</span>
-          <span class="muted small">{snap.error}</span>
+          <span>{$t("Couldn't load usage")}</span>
+          <span class="muted small">{$localize(snap.error)}</span>
         </div>
       {:else}
         {#if snap.note}
           <div class="hint">
-            {snap.note}
-            {#if snap.periodEndsAt}<br /><span class="small">Period {resetIn(snap.periodEndsAt).toLowerCase()}</span>{/if}
+            {$localize(snap.note)}
+            {#if snap.periodEndsAt}<br /><span class="small">{resetText($language.locale, snap.periodEndsAt, now, true)}</span>{/if}
           </div>
         {/if}
         {#if q.hero}
@@ -174,11 +171,11 @@
             <div class="hero-top">
               <div>
                 <div class="big {tone(r)}-text">{Math.floor(100 - r * 100)}<span class="pct">%</span></div>
-                <div class="muted small">{q.hero.label} left</div>
+                <div class="muted small">{$t("{quota} left", { quota: $localize(q.hero.label) })}</div>
               </div>
               <div class="right">
                 {#if isPct(q.hero)}
-                  <div class="value">{fmt.format(q.hero.used)}%<span class="muted"> used</span></div>
+                  <div class="value">{$t("{percent}% used", { percent: fmt.format(q.hero.used) })}</div>
                 {:else}
                   <div class="value">{fmt.format(q.hero.used)}<span class="muted"> / {fmt.format(q.hero.limit!)}</span></div>
                 {/if}
@@ -193,9 +190,9 @@
           {@const r = Math.min(w.used / w.limit!, 1)}
           <div class="quota">
             <div class="row">
-              <span class="label">{w.label}</span>
+              <span class="label">{$localize(w.label)}</span>
               {#if isPct(w)}
-                <span class="value">{Math.floor(100 - r * 100)}%<span class="muted"> left</span></span>
+                <span class="value">{$t("{percent}% left", { percent: Math.floor(100 - r * 100) })}</span>
               {:else}
                 <span class="value">{fmt.format(w.used)}<span class="muted"> / {fmt.format(w.limit!)}</span></span>
               {/if}
@@ -209,20 +206,20 @@
           {@const b = snap.billing}
           {@const id = snap.accountId!}
           {#if b.error}
-            <div class="error-box"><span>Couldn't load model usage</span><span class="muted small">{b.error}</span></div>
+            <div class="error-box"><span>{$t("Couldn't load model usage")}</span><span class="muted small">{$localize(b.error)}</span></div>
           {:else}
             <div class="row">
-              <span class="label">Additional usage</span>
+              <span class="label">{$t("Additional usage")}</span>
               <span class="value">{usd.format(b.additionalAmount)}</span>
             </div>
             {#if b.models.length}
               <button class="toggle" onclick={() => (expanded[id] = !expanded[id])}>
-                <span class="caret" class:open={expanded[id]}>▸</span> By model ({b.models.length})
+                <span class="caret" class:open={expanded[id]}>▸</span> {$t("By model ({count})", { count: b.models.length })}
               </button>
               {#if expanded[id]}
                 <div class="models">
                   {#each b.models as m (m.model)}
-                    <span class="m-name">{m.model}</span>
+                    <span class="m-name">{m.model === "Other" ? $t("Other") : m.model}</span>
                     <span class="value">{fmt.format(m.included + m.additional)}</span>
                     <span class="value muted">{usd.format(m.includedAmount + m.additionalAmount)}</span>
                   {/each}
@@ -235,7 +232,7 @@
         {#if q.unlimited.length}
           <div class="chips">
             {#each q.unlimited as w (w.label)}
-              <span class="chip"><span class="dot"></span>{w.label}<span class="muted">∞</span></span>
+              <span class="chip"><span class="dot"></span>{$localize(w.label)}<span class="muted">∞</span></span>
             {/each}
           </div>
         {/if}
