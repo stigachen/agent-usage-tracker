@@ -1,0 +1,736 @@
+{
+  "metadata": {
+    "platform": "Darwin",
+    "machine": "arm64",
+    "version": "grok 1.0.46 (2765805b9442)",
+    "binary_sha256": "e8daa302364c9c3b6a5546d511cfbd1ab5e5d407a9b04282f660665ea405f9f3"
+  },
+  "results": [
+    {
+      "method": "version",
+      "mode": "success",
+      "seconds": 0.193,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {},
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "success",
+      "seconds": 1.339,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 1,
+        "GET /v1/settings": 1,
+        "GET /v1/bundle/archive": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [],
+      "chat_requests": []
+    },
+    {
+      "method": "inspect",
+      "mode": "success",
+      "seconds": 0.101,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {},
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "success",
+      "seconds": 3.307,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 2,
+        "GET /v1/settings": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "slow_strict",
+      "seconds": 7.637,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 2,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 2,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "authenticate",
+      "mode": "success",
+      "seconds": 3.314,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 2,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 2,
+        "GET /v1/settings": 2,
+        "GET /v1/subagents/bundle": 2
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        },
+        {
+          "process": 0,
+          "id": 2,
+          "error": null,
+          "auth_methods": [],
+          "result_keys": [
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "authenticate",
+      "mode": "slow_strict",
+      "seconds": 16.272,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 2,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 2,
+        "GET /v1/subagents/bundle": 1,
+        "GET /authorize": 1,
+        "GET /favicon.ico": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "bearer",
+      "mode": "success",
+      "seconds": 3.34,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 2,
+        "GET /v1/settings": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        },
+        {
+          "process": 0,
+          "id": 2,
+          "error": null,
+          "auth_methods": [],
+          "result_keys": [
+            "result"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "bearer",
+      "mode": "slow_strict",
+      "seconds": 7.607,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 2,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 2,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        },
+        {
+          "process": 0,
+          "id": 2,
+          "error": null,
+          "auth_methods": [],
+          "result_keys": [
+            "result"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "valid",
+      "seconds": 3.233,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/settings": 1,
+        "GET /v1/models": 2,
+        "GET /v1/bundle/archive": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "near_expiry",
+      "seconds": 3.333,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 2,
+        "GET /v1/settings": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "missing",
+      "seconds": 3.259,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {},
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "no_refresh",
+      "seconds": 3.24,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "invalid_grant",
+      "seconds": 3.361,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "GET /v1/bundle/archive": 1,
+        "POST /token": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "transient",
+      "seconds": 8.366,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 15,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 15,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "concurrent",
+      "seconds": 5.931,
+      "exit_codes": [
+        0,
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "GET /v1/bundle/archive": 2,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 3,
+        "GET /v1/settings": 2,
+        "GET /v1/subagents/bundle": 2
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 1,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        },
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "eof",
+      "seconds": 2.684,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1,
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [],
+      "chat_requests": []
+    },
+    {
+      "method": "initialize",
+      "mode": "switch_account",
+      "seconds": 16.452,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": true,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "GET /v1/bundle/archive": 1,
+        "POST /token": 1,
+        "GET /v1/subagents/bundle": 1,
+        "GET /v1/models": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [
+        {
+          "process": 0,
+          "id": 1,
+          "error": null,
+          "auth_methods": [
+            "cached_token",
+            "grok.com"
+          ],
+          "result_keys": [
+            "protocolVersion",
+            "agentCapabilities",
+            "authMethods",
+            "_meta"
+          ]
+        }
+      ],
+      "session_files": [
+        "sessions/session_search.sqlite"
+      ],
+      "chat_requests": []
+    }
+  ]
+}

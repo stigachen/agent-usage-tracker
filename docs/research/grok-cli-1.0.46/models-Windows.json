@@ -1,0 +1,181 @@
+{
+  "metadata": {
+    "platform": "Windows",
+    "machine": "AMD64",
+    "version": "grok 1.0.46 (2765805b9442)",
+    "binary_sha256": "e09c0893cee4850a569bd90e7aed956ea503b34f551637d58187ca4dfb931611"
+  },
+  "results": [
+    {
+      "method": "models",
+      "mode": "success",
+      "seconds": 4.11,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": true,
+      "refresh_rotated": true,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/user": 1,
+        "GET /v1/models": 1,
+        "GET /v1/settings": 1,
+        "GET /v1/bundle/archive": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "slow_strict",
+      "seconds": 5.265,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/bundle/archive": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [
+        "sessions\\session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "missing",
+      "seconds": 1.672,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {},
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [
+        "sessions\\session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "no_refresh",
+      "seconds": 1.547,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 0,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /v1/bundle/archive": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [
+        "sessions\\session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "invalid_grant",
+      "seconds": 1.531,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 0,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [
+        "sessions\\session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "transient",
+      "seconds": 3.797,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 14,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": false,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 14,
+        "GET /v1/bundle/archive": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [
+        "sessions\\session_search.sqlite"
+      ],
+      "chat_requests": []
+    },
+    {
+      "method": "models",
+      "mode": "switch_account",
+      "seconds": 5.125,
+      "exit_codes": [
+        0
+      ],
+      "forced_terminations": 0,
+      "token_requests": 1,
+      "access_rotated": false,
+      "refresh_rotated": false,
+      "entry_count": 1,
+      "other_account_preserved": true,
+      "request_counts": {
+        "GET /.well-known/openid-configuration": 1,
+        "POST /token": 1,
+        "GET /v1/bundle/archive": 1,
+        "GET /v1/settings": 1,
+        "GET /v1/subagents/bundle": 1
+      },
+      "authenticate_skipped_not_advertised": [],
+      "rpc": [],
+      "session_files": [
+        "sessions\\session_search.sqlite"
+      ],
+      "chat_requests": []
+    }
+  ]
+}
