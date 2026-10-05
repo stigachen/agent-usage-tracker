@@ -5,6 +5,8 @@
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
   import type { TrayDisplay, UsageSnapshot } from "./types";
+  import { language, localize, setLanguage, t } from "./language";
+  import type { LanguagePreference } from "./i18n";
 
   let {
     snaps,
@@ -39,13 +41,7 @@
     "https://github.com/settings/tokens/new?scopes=user&description=Agent%20Usage%20billing";
   const key = (s: UsageSnapshot) => `${s.providerId}:${s.accountId}`;
 
-  const intervals = [
-    [60, "1 min"],
-    [300, "5 min"],
-    [600, "10 min"],
-    [1800, "30 min"],
-    [3600, "1 hour"],
-  ] as const;
+  const intervals = [60, 300, 600, 1800, 3600] as const;
 
   onMount(async () => {
     getVersion().then((v) => (version = v));
@@ -83,6 +79,12 @@
   function setRefresh(v: number) {
     refreshSecs = v;
     run(() => invoke("set_refresh_secs", { secs: v }));
+  }
+
+  async function changeLanguage(select: HTMLSelectElement) {
+    await run(() => setLanguage(select.value as LanguagePreference));
+    // Restore the DOM selection as well if persistence failed.
+    select.value = $language.preference;
   }
 
   function toggleAutostart() {
@@ -131,54 +133,62 @@
 
 <div class="settings" class:windows={platform === "windows"} in:fly={{ x: 12, duration: 180 }}>
   <div class="top">
-    <button class="back" onclick={onclose} aria-label="Back">
+    <button class="back" onclick={onclose} aria-label={$t("Back")}>
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     </button>
-    <h1>Settings</h1>
+    <h1>{$t("Settings")}</h1>
   </div>
 
   <div class="tabs" role="tablist">
     {#each pages as [id, name] (id)}
       <button role="tab" class="tab" class:active={page === id} aria-selected={page === id} onclick={() => (page = id)}>
-        {name}{#if id === "accounts" && accounts.length}<span class="count">{accounts.length}</span>{/if}
+        {$t(name)}{#if id === "accounts" && accounts.length}<span class="count">{accounts.length}</span>{/if}
       </button>
     {/each}
   </div>
 
   {#if page === "general"}
   <section>
-    <h3>{platform === "windows" ? "System tray" : "Menu bar"}</h3>
+    <h3>{$t(platform === "windows" ? "System tray" : "Menu bar")}</h3>
     {#if platform === "windows"}
-      <p class="hint">Hover over the tray icon to see the selected remaining quota.</p>
+      <p class="hint">{$t("Hover over the tray icon to see the selected remaining quota.")}</p>
     {/if}
     <div class="group">
       <label class="row">
-        <span>Show</span>
+        <span>{$t("Show")}</span>
         <select value={tray} onchange={(e) => setTray(e.currentTarget.value)}>
-          <option value="lowest">Lowest remaining</option>
+          <option value="lowest">{$t("Lowest remaining")}</option>
           {#each accounts as s (key(s))}
             <option value={key(s)}>{s.providerName} · @{s.account}</option>
           {/each}
-          <option value="iconOnly">Icon only</option>
+          <option value="iconOnly">{$t("Icon only")}</option>
         </select>
       </label>
     </div>
   </section>
 
   <section>
-    <h3>General</h3>
+    <h3>{$t("General")}</h3>
     <div class="group">
       <label class="row">
-        <span>Refresh every</span>
+        <span>{$t("Language")}</span>
+        <select aria-label={$t("Language")} value={$language.preference} disabled={!$language.ready || $language.saving} onchange={(e) => changeLanguage(e.currentTarget)}>
+          <option value="system">{$t("Follow system")}</option>
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+        </select>
+      </label>
+      <label class="row">
+        <span>{$t("Refresh every")}</span>
         <select value={refreshSecs} onchange={(e) => setRefresh(+e.currentTarget.value)}>
-          {#each intervals as [v, l] (v)}
-            <option value={v}>{l}</option>
+          {#each intervals as v (v)}
+            <option value={v}>{v === 3600 ? $t("1 hour") : $t("{minutes} min", { minutes: v / 60 })}</option>
           {/each}
         </select>
       </label>
       <div class="row">
-        <span>Launch at login</span>
-        <button class="switch" class:on={autostart} onclick={toggleAutostart} role="switch" aria-checked={autostart} aria-label="Launch at login">
+        <span>{$t("Launch at login")}</span>
+        <button class="switch" class:on={autostart} onclick={toggleAutostart} role="switch" aria-checked={autostart} aria-label={$t("Launch at login")}>
           <span class="knob"></span>
         </button>
       </div>
@@ -186,14 +196,14 @@
   </section>
 
   <section>
-    <h3>About</h3>
+    <h3>{$t("About")}</h3>
     <div class="group">
       <div class="about">
         <img src="/app-icon.png" alt="" width="44" height="44" />
         <div class="about-text">
           <span class="name">Agent Usage</span>
-          <span class="muted">Version {version}</span>
-          <span class="muted">Usage and quota for your coding agents</span>
+          <span class="muted">{$t("Version {version}", { version })}</span>
+          <span class="muted">{$t("Usage and quota for your coding agents")}</span>
         </div>
       </div>
       <div class="row">
@@ -204,8 +214,8 @@
   </section>
   {:else}
   <section>
-    <h3>Accounts</h3>
-    <p class="hint">Switch off to hide an account from Overview. It stays in its own tab.</p>
+    <h3>{$t("Accounts")}</h3>
+    <p class="hint">{$t("Switch off to hide an account from Overview. It stays in its own tab.")}</p>
     <div class="group">
       {#each accounts as s (key(s))}
         <div class="row">
@@ -220,67 +230,66 @@
               onclick={() => setHidden(s, !s.hidden)}
               role="switch"
               aria-checked={!s.hidden}
-              aria-label="Show @{s.account} in Overview"
-              title={s.hidden ? "Hidden from Overview" : "Shown in Overview"}
+              aria-label={$t("Show @{account} in Overview", { account: s.account ?? "" })}
+              title={$t(s.hidden ? "Hidden from Overview" : "Shown in Overview")}
             >
               <span class="knob"></span>
             </button>
             {#if !s.managed}
               <button class="danger" class:armed={confirming === key(s)} onclick={() => signOut(s)}>
-                {confirming === key(s) ? "Sign out?" : "Sign out"}
+                {$t(confirming === key(s) ? "Sign out?" : "Sign out")}
               </button>
             {/if}
           </span>
         </div>
       {:else}
-        <div class="row muted">No accounts yet</div>
+        <div class="row muted">{$t("No accounts yet")}</div>
       {/each}
     </div>
   </section>
 
   {#if copilot.length}
     <section>
-      <h3>Copilot model usage</h3>
+      <h3>{$t("Copilot model usage")}</h3>
       <div class="group">
         {#each copilot as s (s.accountId)}
           <div class="row">
             <span class="acc">
               <span>@{s.account}</span>
-              <span class="muted">{s.billingConfigured ? (s.billing?.error ?? "Token saved") : "Not set up"}</span>
+              <span class="muted">{s.billingConfigured ? (s.billing?.error ? $localize(s.billing.error) : $t("Token saved")) : $t("Not set up")}</span>
             </span>
             {#if s.billingConfigured}
               <span class="actions">
-                <button class="link" disabled={saving === s.accountId} onclick={() => edit(s.accountId)}>Replace</button>
-                <button class="danger" disabled={saving === s.accountId} onclick={() => saveToken(s.accountId!, "")}>Remove</button>
+                <button class="link" disabled={saving === s.accountId} onclick={() => edit(s.accountId)}>{$t("Replace")}</button>
+                <button class="danger" disabled={saving === s.accountId} onclick={() => saveToken(s.accountId!, "")}>{$t("Remove")}</button>
               </span>
             {:else if editing !== s.accountId}
-              <button class="link" onclick={() => edit(s.accountId)}>Set up</button>
+              <button class="link" onclick={() => edit(s.accountId)}>{$t("Set up")}</button>
             {/if}
           </div>
           {#if editing === s.accountId}
             <div class="pat">
               <span class="muted">
-                Create a classic token with the <b>user</b> scope while signed in to GitHub as
-                <b>@{s.account}</b>. It is stored in the system credential store and only used to read billing.
+                {$t("Create a classic token with the user scope while signed in to GitHub as @{account}. It is stored in the system credential store and only used to read billing.", { account: s.account ?? "" })}
               </span>
-              <button class="link" onclick={() => invoke("open_url", { url: PAT_URL })}>Create token on GitHub ↗</button>
+              <button class="link" onclick={() => invoke("open_url", { url: PAT_URL })}>{$t("Create token on GitHub ↗")}</button>
               <div class="pat-row">
                 <input type="password" placeholder="ghp_…" bind:value={draft} spellcheck="false" autocomplete="off" />
                 <button class="primary" disabled={!draft.trim() || saving === s.accountId} onclick={() => saveToken(s.accountId!, draft)}>
-                  {saving === s.accountId ? "Checking…" : "Save"}
+                  {$t(saving === s.accountId ? "Checking…" : "Save")}
                 </button>
-                <button class="link" disabled={saving === s.accountId} onclick={() => edit(null)}>Cancel</button>
+                <button class="link" disabled={saving === s.accountId} onclick={() => edit(null)}>{$t("Cancel")}</button>
               </div>
             </div>
           {/if}
-          {#if patError?.account === s.accountId}<p class="error pat-error">{patError.msg}</p>{/if}
+          {#if patError?.account === s.accountId}<p class="error pat-error">{$localize(patError.msg)}</p>{/if}
         {/each}
       </div>
     </section>
   {/if}
   {/if}
 
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if error}<p class="error">{$localize(error)}</p>{/if}
 </div>
 
 <style>

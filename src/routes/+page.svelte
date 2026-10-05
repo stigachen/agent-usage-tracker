@@ -8,6 +8,7 @@
   import ProviderIcon from "$lib/ProviderIcon.svelte";
   import Settings from "$lib/Settings.svelte";
   import type { UsageSnapshot } from "$lib/types";
+  import { language, refreshLanguage, t } from "$lib/language";
 
   const MAX_HEIGHT = 600;
   let maxHeight = $state(MAX_HEIGHT);
@@ -35,7 +36,7 @@
   let unconnected = $derived(groups.filter((g) => !g.some((s) => s.accountId)).map((g) => g[0]));
   let tab = $state("overview");
   let tabs = $derived([
-    { id: "overview", name: "Overview" },
+    { id: "overview", name: $t("Overview") },
     ...connected.map((g) => ({ id: g[0].providerId, name: g[0].providerName })),
   ]);
   // Accounts the user hid stay in their provider tab but not in the overview.
@@ -49,10 +50,15 @@
   let updatedText = $derived.by(() => {
     if (!updated) return "";
     const m = Math.floor((now - updated) / 60_000);
-    return m < 1 ? "Updated just now" : m < 60 ? `Updated ${m}m ago` : `Updated ${Math.floor(m / 60)}h ago`;
+    return m < 1 ? $t("Updated just now") : m < 60 ? $t("Updated {minutes}m ago", { minutes: m }) : $t("Updated {hours}h ago", { hours: Math.floor(m / 60) });
   });
 
+  $effect(() => { document.documentElement.lang = $language.locale; });
+
   onMount(() => {
+    const syncLanguage = () => { refreshLanguage().catch((error) => console.error("Could not load language settings", error)); };
+    syncLanguage();
+    window.addEventListener("languagechange", syncLanguage);
     invoke<UsageSnapshot[]>("get_snapshots").then((s) => {
       snaps = s;
       loaded = s.length > 0;
@@ -83,6 +89,7 @@
         now = Date.now();
       }),
       listen("panel-shown", () => {
+        syncLanguage();
         refreshing = true;
         showSettings = false;
         fitToMonitor();
@@ -99,6 +106,7 @@
       ro.disconnect();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("languagechange", syncLanguage);
       un.forEach((p) => p.then((f) => f()));
     };
   });
@@ -116,10 +124,10 @@
   <div class="top">
     <h1>Agent Usage</h1>
     <div class="actions">
-    <button class="icon" onclick={() => openSettings()} title="Settings" aria-label="Settings">
+    <button class="icon" onclick={() => openSettings()} title={$t("Settings")} aria-label={$t("Settings")}>
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>
-    <button class="icon" class:spin={refreshing} onclick={refresh} title="Refresh" aria-label="Refresh">
+    <button class="icon" class:spin={refreshing} onclick={refresh} title={$t("Refresh")} aria-label={$t("Refresh")}>
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
     </button>
     </div>
@@ -173,7 +181,7 @@
 
   <footer>
     <span class="muted">{updatedText}</span>
-    <button class="link" onclick={() => invoke("quit")}>Quit</button>
+    <button class="link" onclick={() => invoke("quit")}>{$t("Quit")}</button>
   </footer>
   {/if}
 </main>
