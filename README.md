@@ -34,6 +34,22 @@ Copilot 主额度只需在应用内用 GitHub 登录。若还想看按模型的 
 
 token 只用于读取 `GET /users/{login}/settings/billing/ai_credit/usage`；失效时只影响明细，主额度照常显示。多账号各自配置，互不影响。
 
+### Grok CLI 凭据
+
+Grok 用量来自 CLI 的登录凭据。macOS 默认读取 `~/.grok/auth.json`，Windows 默认读取
+`%USERPROFILE%\.grok\auth.json`；两个平台都可用 `GROK_HOME` 指定另一个凭据目录。
+建议使用绝对路径，该变量必须对 **Agent Usage 进程**可见；只在终端中设置变量，不会影响已启动的应用。
+未设置或为空时使用默认目录；指定目录中的文件缺失或无效时，不会改读默认目录。
+
+每次读取一个目录中的一个账号：优先选标准 Grok CLI 的 xAI 登录记录，其次选唯一的其他
+`https://auth.x.ai` 客户端记录，最后兼容旧版 `https://accounts.x.ai/sign-in` 记录。
+多个非标准 xAI 客户端记录并存时会报告无法确定账号；选中的凭据过期或损坏时，
+不会偷偷改用其他记录。暂不解析 CLI 的自定义企业认证配置，也不支持 API key 用量或同时监控多个 Grok 目录。
+
+一次用量查询始终使用同一份凭据，请求结束时再检查账号。账号或计费主体已切换时丢弃旧结果，
+同一账号正常更新 token 时保留成功的结果。应用只读凭据，不修改文件，也不主动续期；
+凭据过期后仍需运行 Grok CLI 更新，再在应用内刷新。
+
 ## 开发
 
 需要 Node.js LTS、项目 `packageManager` 指定版本的 pnpm，以及 Rust stable。
@@ -78,7 +94,7 @@ pnpm tauri build --target x86_64-pc-windows-msvc --no-bundle
   |---|---|---|
   | Codex | `%USERPROFILE%\.codex\auth.json` | `CODEX_HOME` |
   | Claude Code | `%USERPROFILE%\.claude\.credentials.json` | `CLAUDE_CONFIG_DIR` |
-  | Grok | `%USERPROFILE%\.grok\auth.json` | — |
+  | Grok | `%USERPROFILE%\.grok\auth.json` | `GROK_HOME` |
 
 仅在 WSL 中登录的凭据不会自动发现。环境变量须对运行应用的 Windows 进程可见。
 应用配置位于 `%APPDATA%\com.stigachen.agentusage\config.json`。
