@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Probe native CLI with synthetic credentials and loopback OAuth
-        run: python scripts/probe-grok-renewal.py --output results/${{ runner.os }}.json
+        run: python scripts/probe-grok-renewal.py --method models --output results/${{ runner.os }}.json
       - name: Upload nonsecret observations
         if: always()
         uses: actions/upload-artifact@v4

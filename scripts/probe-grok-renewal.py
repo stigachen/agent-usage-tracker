@@ -222,7 +222,7 @@ def run_case(exe, root, method, mode):
             process.stdin.flush()
     eof_sent = False
     switched = False
-    budget = 14 if mode in ("slow_strict", "eof", "switch_account") else 6
+    budget = 14 if cli_command or mode in ("slow_strict", "eof", "switch_account") else 6
     while time.monotonic() - start < budget:
         while not lines.empty():
             index, response = lines.get()
@@ -308,7 +308,8 @@ def main():
     cases = [(method, mode) for method in ("initialize", "authenticate", "bearer") for mode in ("success", "slow_strict")]
     if not options.quick:
         cases = [(method, "success") for method in ("version", "models", "inspect")] + cases + [
-            ("initialize", mode) for mode in ("valid", "near_expiry", "missing", "no_refresh", "invalid_grant", "transient", "concurrent", "eof", "switch_account")]
+            ("initialize", mode) for mode in ("valid", "near_expiry", "missing", "no_refresh", "invalid_grant", "transient", "concurrent", "eof", "switch_account")] + [
+            ("models", mode) for mode in ("slow_strict", "missing", "no_refresh", "invalid_grant", "transient", "switch_account")]
     if options.method:
         cases = [(method, mode) for method, mode in cases if method == options.method]
     results = [run_case(exe, root, method, mode) for method, mode in cases]
