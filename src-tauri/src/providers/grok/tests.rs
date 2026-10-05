@@ -83,6 +83,9 @@ impl Server {
                         Err(error) => panic!("mock accept: {error}"),
                     }
                 };
+                // Accepted sockets may inherit the listener's nonblocking mode on macOS/Windows.
+                // Use blocking reads with a timeout so request arrival timing cannot cause WouldBlock.
+                stream.set_nonblocking(false).unwrap();
                 stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                 let mut bytes = Vec::new();
                 let mut buffer = [0; 1024];
