@@ -88,6 +88,7 @@ impl Grok {
     }
 
     fn changed(&self, current: &auth::Auth) -> UsageSnapshot {
+        self.monitor.lock().unwrap().retry_after_change();
         let mut snapshot = self.snapshot(Some(current.account_id()));
         snapshot.credential_issue = Some(CredentialIssue::Changed);
         snapshot.error = Some("Grok sign-in changed. Usage will update automatically.".into());
@@ -185,12 +186,24 @@ impl Grok {
                 return snap;
             }
             Ok(r) => match r.error_for_status() {
-                Ok(r) => match r.json().await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        snap.error = Some(format!("Bad response: {e}"));
-                        snap.fetch_issue = Some(FetchIssue::Response);
-                        return snap;
+                Ok(r) => {
+                    // Read the whole body before parsing: reqwest also labels body transport
+                    // failures as decode errors, so is_decode() cannot distinguish them.
+                    let bytes = match r.bytes().await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            snap.error = Some(e.to_string());
+                            snap.fetch_issue = Some(FetchIssue::from_request(&e));
+                            return snap;
+                        }
+                    };
+                    match serde_json::from_slice(&bytes) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            snap.error = Some(format!("Bad response: {e}"));
+                            snap.fetch_issue = Some(FetchIssue::Response);
+                            return snap;
+                        }
                     }
                 },
                 Err(e) => {

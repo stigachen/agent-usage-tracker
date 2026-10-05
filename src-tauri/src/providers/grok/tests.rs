@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
@@ -80,12 +80,21 @@ impl Server {
         responses: Vec<(u16, Vec<u8>)>,
         mut on_request: impl FnMut(usize) + Send + 'static,
     ) -> Self {
+        Self::respond(responses.len(), move |index, stream| {
+            on_request(index);
+            let (status, body) = &responses[index];
+            write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+            stream.write_all(body).unwrap();
+        })
+    }
+
+    fn respond(count: usize, mut respond: impl FnMut(usize, &mut TcpStream) + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
         let worker = thread::spawn(move || {
             let mut requests = Vec::new();
-            for (index, (status, body)) in responses.into_iter().enumerate() {
+            for index in 0..count {
                 let deadline = Instant::now() + Duration::from_secs(10);
                 let mut stream = loop {
                     match listener.accept() {
@@ -123,9 +132,7 @@ impl Server {
                     bytes.extend_from_slice(&buffer[..count]);
                 }
                 requests.push(headers);
-                on_request(index);
-                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
-                stream.write_all(&body).unwrap();
+                respond(index, &mut stream);
             }
             requests
         });
@@ -134,6 +141,16 @@ impl Server {
 
     fn usage(on_request: impl FnMut(usize) + Send + 'static) -> Self {
         Self::start(vec![(200, BILLING.as_bytes().to_vec()), (200, SETTINGS.as_bytes().to_vec())], on_request)
+    }
+
+    fn partial_body() -> (Self, std::sync::mpsc::Sender<()>) {
+        let (release, wait) = std::sync::mpsc::channel();
+        let server = Self::respond(1, move |_, stream| {
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{").unwrap();
+            // Keep the body incomplete until the test closes it, or the client times out.
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        (server, release)
     }
 
     fn finish(self, token: &str) -> Vec<String> {
@@ -607,4 +624,98 @@ async fn transient_read_failure_recovers_even_when_the_same_credentials_return_b
         assert_eq!(recovered.windows[0].used, 23.0);
         assert!(!fixture.poll());
     }
+}
+
+#[tokio::test]
+async fn changed_sign_in_recovers_when_original_credentials_return_before_polling() {
+    for same_account in [false, true] {
+        let fixture = Fixture::new();
+        fixture.seed().await;
+        let path = fixture.0.clone();
+        let replacement_email = if same_account { "a@example.com" } else { "b@example.com" };
+        let responses = if same_account {
+            vec![(401, b"{}".to_vec())]
+        } else {
+            vec![(200, BILLING.as_bytes().to_vec()), (200, SETTINGS.as_bytes().to_vec())]
+        };
+        let server = Server::start(responses, move |_| {
+            write_auth(&path, entry(replacement_email, "replacement-token"));
+        });
+        let changed = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(changed.credential_issue, Some(CredentialIssue::Changed));
+        if !same_account { assert_no_usage(&changed, CredentialIssue::Changed); }
+
+        // The monitor never sees B. Returning to exactly A must still recover from Changed.
+        fixture.write(entry("a@example.com", "original-token"));
+        assert!(!fixture.poll());
+        assert!(fixture.poll());
+        assert!(!fixture.poll(), "a pending retry must only be scheduled once");
+        let server = Server::usage(|_| {});
+        let recovered = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(recovered.account_id.as_deref(), Some("a@example.com"));
+        assert_eq!(recovered.credential_issue, None);
+        assert!(!recovered.stale);
+        assert_eq!(recovered.windows[0].used, 23.0);
+        assert!(!fixture.poll());
+        assert!(!fixture.poll());
+    }
+}
+
+#[tokio::test]
+async fn manual_refresh_satisfies_a_pending_retry_after_an_account_change() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let path = fixture.0.clone();
+    let server = Server::usage(move |_| {
+        write_auth(&path, entry("b@example.com", "replacement-token"));
+    });
+    let changed = fixture.fetch(&server.endpoint).await;
+    server.finish("original-token");
+    assert_no_usage(&changed, CredentialIssue::Changed);
+    fixture.write(entry("a@example.com", "original-token"));
+    assert!(!fixture.poll());
+    let server = Server::usage(|_| {});
+    let recovered = fixture.fetch(&server.endpoint).await;
+    server.finish("original-token");
+    assert_eq!(recovered.credential_issue, None);
+    assert!(!fixture.poll());
+    assert!(!fixture.poll(), "manual recovery must not leave a redundant retry queued");
+}
+
+async fn assert_body_transport_failure_is_network(timeout: bool) {
+    for grpc in [false, true] {
+        let fixture = Fixture::new();
+        let success = fixture.seed().await;
+        let http = reqwest::Client::builder().no_proxy()
+            .read_timeout(Duration::from_secs(1)).timeout(Duration::from_secs(5)).build().unwrap();
+        let (broken, release) = Server::partial_body();
+        if !timeout { release.send(()).unwrap(); }
+        let proxy = grpc.then(|| Server::start(vec![
+            (200, br#"{"config":{}}"#.to_vec()), (200, SETTINGS.as_bytes().to_vec()),
+        ], |_| {}));
+        let endpoint = proxy.as_ref().map_or(broken.endpoint.as_str(), |server| server.endpoint.as_str());
+        let failed = fixture.1.fetch_from_path(&http, &fixture.0, None, endpoint, &broken.endpoint).await;
+        if timeout { release.send(()).unwrap(); }
+        broken.finish("original-token");
+        if let Some(proxy) = proxy { proxy.finish("original-token"); }
+        assert_eq!(failed.fetch_issue, Some(FetchIssue::Network), "grpc={grpc}, timeout={timeout}");
+        assert!(!failed.needs_auth);
+        assert_eq!(failed.credential_issue, None);
+        assert!(failed.stale);
+        assert_eq!(failed.last_success_at, success.last_success_at);
+        assert_eq!(failed.windows[0].used, 23.0);
+        assert_eq!(failed.min_remaining(), None);
+    }
+}
+
+#[tokio::test]
+async fn response_body_timeout_is_a_network_failure() {
+    assert_body_transport_failure_is_network(true).await;
+}
+
+#[tokio::test]
+async fn response_body_disconnect_is_a_network_failure() {
+    assert_body_transport_failure_is_network(false).await;
 }

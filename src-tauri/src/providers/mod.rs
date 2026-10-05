@@ -29,9 +29,10 @@ pub enum FetchIssue {
 }
 
 impl FetchIssue {
+    /// Classify HTTP operations, including reading the response body. reqwest may mark
+    /// interrupted transfers as decode errors; content is parsed and classified separately.
     pub fn from_request(error: &reqwest::Error) -> Self {
         if error.is_status() { Self::Service }
-        else if error.is_decode() { Self::Response }
         else { Self::Network }
     }
 }
