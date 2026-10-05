@@ -6,10 +6,12 @@
   import ProviderIcon from "./ProviderIcon.svelte";
   import type { DeviceCode, UsageSnapshot } from "./types";
   import { language, localize, t } from "./language";
-  import { resetText } from "./i18n";
+  import { lastSuccessText, resetText } from "./i18n";
+  import { grokStatus } from "./usage-status";
 
   let { snaps, now }: { snaps: UsageSnapshot[]; now: number } = $props();
   let first = $derived(snaps[0]);
+  let firstStatus = $derived(grokStatus(first));
   // Placeholder snapshot (no account) means the provider has no accounts yet.
   let accounts = $derived(snaps.filter((s) => s.accountId));
   // Discovered (managed) accounts aren't stored, so only stored ones can be reordered.
@@ -111,7 +113,10 @@
       <span class="muted small">{$t(copied ? "Copied to clipboard" : "Waiting for authorization…")}</span>
     </div>
   {:else if !accounts.length && first.loginHint}
-    <div class="hint">{$localize(first.loginHint)}</div>
+    <div class="hint">
+      {#if firstStatus}<div class="status-label">{$t(firstStatus)}</div>{/if}
+      {$localize(first.loginHint)}
+    </div>
   {:else if !accounts.length}
     <button class="primary" onclick={signIn}>{$t("Sign in with GitHub")}</button>
   {/if}
@@ -120,6 +125,7 @@
   <div class="accounts" role="list" data-reorder-list>
   {#each shown as snap (snap.accountId)}
     {@const q = quotas(snap)}
+    {@const status = grokStatus(snap)}
     <div
       class="account"
       role="listitem"
@@ -129,7 +135,7 @@
     >
       <div class="acc-head">
         <span class="acc-name">@{snap.account}</span>
-        {#if snap.plan}<span class="plan">{prettyPlan(snap.plan)}</span>{/if}
+        {#if snap.plan}<span class="plan" title={snap.stale ? $t("Previous usage") : undefined}>{prettyPlan(snap.plan)}</span>{/if}
         {#if snap.managed}
           <span></span>
         {:else if confirming === snap.accountId}
@@ -151,14 +157,31 @@
         {/if}
       </div>
 
-      {#if snap.needsAuth}
+      {#if status}
+        <div class="error-box">
+          <span>{$t(status)}</span>
+          {#if snap.error || snap.loginHint}<span class="muted small">{$localize(snap.error ?? snap.loginHint!)}</span>{/if}
+          {#if snap.fetchIssue}<span class="muted small">{$t("Usage will retry automatically.")}</span>{/if}
+        </div>
+      {:else if snap.needsAuth}
         <div class="error-box"><span>{$t("Session expired")}</span><span class="muted small">{snap.loginHint ? $localize(snap.loginHint) : $t("Sign out and add the account again.")}</span></div>
       {:else if snap.error}
         <div class="error-box">
           <span>{$t("Couldn't load usage")}</span>
           <span class="muted small">{$localize(snap.error)}</span>
         </div>
-      {:else}
+      {/if}
+
+      {#if snap.stale && q.hero && snap.lastSuccessAt}
+        <div class="history">
+          <div class="row">
+            <span class="label">{$t("Previous usage")}</span>
+            <span class="value">{$t("{percent}% left", { percent: Math.max(0, Math.floor(100 - q.hero.used / q.hero.limit! * 100)) })}</span>
+          </div>
+          <span class="small">{$localize(q.hero.label)}</span>
+          <span class="small" title={new Date(snap.lastSuccessAt).toLocaleString($language.locale)}>{lastSuccessText($language.locale, snap.lastSuccessAt, now)}</span>
+        </div>
+      {:else if !snap.needsAuth && !snap.error && !status}
         {#if snap.note}
           <div class="hint">
             {$localize(snap.note)}
@@ -293,6 +316,8 @@
     font-weight: 500; background: #ff453a; color: white; cursor: pointer;
   }
   .acc-name { font-weight: 500; }
+  .status-label { color: var(--fg); font-weight: 500; margin-bottom: 6px; }
+  .history { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; background: var(--chip); color: var(--muted); }
   .hero { display: flex; flex-direction: column; gap: 10px; }
   .hero-top { display: flex; justify-content: space-between; align-items: flex-end; }
   .big {
@@ -358,6 +383,7 @@
   .error { color: #ff453a; font-size: 12px; margin: 0; }
   .error-box {
     display: flex; flex-direction: column; gap: 2px; font-size: 12px;
+    overflow-wrap: anywhere;
     padding: 8px 10px; border-radius: 9px; background: rgba(255, 69, 58, 0.1); color: #ff453a;
   }
 </style>

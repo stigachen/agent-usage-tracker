@@ -18,6 +18,31 @@ export const zhCN = {
   "Updated just now": "刚刚更新",
   "Updated {minutes}m ago": "{minutes} 分钟前更新",
   "Updated {hours}h ago": "{hours} 小时前更新",
+  "Checked just now": "刚刚检查",
+  "Checked {minutes}m ago": "{minutes} 分钟前检查",
+  "Checked {hours}h ago": "{hours} 小时前检查",
+  "Not signed in": "未登录",
+  "Sign-in rejected": "登录凭据被拒绝",
+  "Can't read sign-in": "无法读取登录信息",
+  "Invalid sign-in data": "登录信息无效",
+  "Unsupported sign-in": "不支持的登录方式",
+  "Multiple sign-ins found": "无法确定登录账号",
+  "Sign-in changed": "登录信息已变化",
+  "Network request failed": "网络请求失败",
+  "Service unavailable": "服务暂不可用",
+  "Invalid usage response": "用量响应无效",
+  "Previous": "上次",
+  "Previous usage": "历史用量",
+  "Last success just now": "上次成功更新：刚刚",
+  "Last success {minutes}m ago": "上次成功更新：{minutes} 分钟前",
+  "Last success {hours}h ago": "上次成功更新：{hours} 小时前",
+  "Last success {days}d ago": "上次成功更新：{days} 天前",
+  "Usage will retry automatically.": "用量查询会自动重试。",
+  "Sign in with `grok login`. Usage updates automatically.": "请运行 `grok login` 登录，用量会自动更新。",
+  "Run `grok` to renew your session. Usage updates automatically when the sign-in changes.": "请运行 `grok` 更新登录凭据，凭据变化后用量会自动更新。",
+  "Run `grok login` to sign in again. Usage updates automatically.": "请运行 `grok login` 重新登录，用量会自动更新。",
+  "Couldn't load Grok's usage percentage.": "无法获取 Grok 的用量百分比。",
+  "Grok sign-in changed. Usage will update automatically.": "Grok 登录信息已变化，用量会自动更新。",
   "System tray": "系统托盘",
   "Menu bar": "菜单栏",
   "Hover over the tray icon to see the selected remaining quota.": "将鼠标悬停在托盘图标上，查看所选账号的剩余额度。",
@@ -96,13 +121,11 @@ export const zhCN = {
   "Other": "其他",
   "Run `claude` and sign in with /login, then refresh.": "运行 `claude`，使用 /login 登录，然后刷新。",
   "Run `codex login` in a terminal, then refresh.": "在终端中运行 `codex login`，然后刷新。",
-  "Run `grok login` (or any grok command to refresh), then refresh.": "运行 `grok login`（或运行任意 grok 命令来更新凭据），然后刷新。",
-  "Grok CLI credentials were not found. Run `grok login`, then refresh.": "未找到 Grok CLI 凭据。请运行 `grok login`，然后刷新。",
+  "Grok CLI credentials were not found. Run `grok login`. Usage updates automatically.": "未找到 Grok CLI 凭据。请运行 `grok login`，用量会自动更新。",
   "Couldn't read Grok CLI credentials. Check the file permissions and GROK_HOME.": "无法读取 Grok CLI 凭据。请检查文件权限和 GROK_HOME。",
-  "Grok CLI credentials are incomplete or invalid. Run `grok login`, then refresh.": "Grok CLI 凭据不完整或无效。请运行 `grok login`，然后刷新。",
-  "No supported Grok CLI login was found. Run `grok login`, then refresh.": "未找到支持的 Grok CLI 登录凭据。请运行 `grok login`，然后刷新。",
+  "Grok CLI credentials are incomplete or invalid. Run `grok login`. Usage updates automatically.": "Grok CLI 凭据不完整或无效。请运行 `grok login`，用量会自动更新。",
+  "No supported Grok CLI login was found. Run `grok login`. Usage updates automatically.": "未找到支持的 Grok CLI 登录凭据。请运行 `grok login`，用量会自动更新。",
   "Multiple Grok CLI credential entries were found. The active account could not be determined.": "发现多条 Grok CLI 凭据，无法确定当前账号。",
-  "Grok CLI credentials changed during the request. Refresh again.": "请求期间 Grok CLI 凭据发生变化。请再次刷新。",
   "Grok didn't report usage for this account.": "Grok 未提供此账号的用量数据。",
   "Grok doesn't report a usage percentage for this plan yet.": "Grok 尚未提供此套餐的用量百分比。",
   "Billing token is invalid or expired": "账单令牌无效或已过期",
@@ -126,6 +149,17 @@ export type Translator = (message: Message, params?: Params) => string;
 export function translate(locale: Locale, message: Message, params: Params = {}): string {
   const template = locale === "zh-CN" ? zhCN[message] : message;
   return template.replace(/\{(\w+)\}/g, (match, key: string) => String(params[key] ?? match));
+}
+
+export function lastSuccessText(locale: Locale, timestamp: string, now: number): string {
+  const at = Date.parse(timestamp);
+  if (!Number.isFinite(at)) return translate(locale, "Previous usage");
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
+  if (minutes < 1) return translate(locale, "Last success just now");
+  if (minutes < 60) return translate(locale, "Last success {minutes}m ago", { minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return translate(locale, "Last success {hours}h ago", { hours });
+  return translate(locale, "Last success {days}d ago", { days: Math.floor(hours / 24) });
 }
 
 export function providerText(locale: Locale, text: string): string {

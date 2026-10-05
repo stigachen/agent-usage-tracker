@@ -6,6 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 use std::ffi::OsString;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 const OIDC_PREFIX: &str = "https://auth.x.ai::";
@@ -15,12 +16,12 @@ const LEGACY_SCOPE: &str = "https://accounts.x.ai/sign-in";
 // Deliberately no Debug/Serialize: this value contains a bearer token.
 pub(super) struct Auth {
     pub key: String,
-    identity: Identity,
+    pub(super) identity: Identity,
     expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(PartialEq, Eq)]
-struct Identity {
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub(super) struct Identity {
     scope: String,
     email: Option<String>,
     user_id: Option<String>,
@@ -56,6 +57,16 @@ impl Auth {
     pub fn same_account(&self, other: &Self) -> bool {
         self.identity == other.identity
     }
+
+    /// A process-local change detector, never used as an account/cache key or sent to the UI.
+    /// Retaining this fingerprint avoids retaining the bearer between polls.
+    pub fn fingerprint(&self) -> u64 {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        self.identity.hash(&mut hash);
+        self.key.hash(&mut hash);
+        self.expires_at.hash(&mut hash);
+        hash.finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,10 +91,10 @@ impl AuthError {
 
     pub fn message(self) -> &'static str {
         match self {
-            Self::Missing => "Grok CLI credentials were not found. Run `grok login`, then refresh.",
+            Self::Missing => "Grok CLI credentials were not found. Run `grok login`. Usage updates automatically.",
             Self::Unreadable => "Couldn't read Grok CLI credentials. Check the file permissions and GROK_HOME.",
-            Self::Invalid => "Grok CLI credentials are incomplete or invalid. Run `grok login`, then refresh.",
-            Self::Unsupported => "No supported Grok CLI login was found. Run `grok login`, then refresh.",
+            Self::Invalid => "Grok CLI credentials are incomplete or invalid. Run `grok login`. Usage updates automatically.",
+            Self::Unsupported => "No supported Grok CLI login was found. Run `grok login`. Usage updates automatically.",
             Self::Ambiguous => "Multiple Grok CLI credential entries were found. The active account could not be determined.",
         }
     }

@@ -2,10 +2,12 @@
 //! Credentials are owned and refreshed by the `grok` CLI; read-only here.
 
 mod auth;
+mod history;
+mod monitor;
 #[cfg(test)]
 mod tests;
 
-use super::{Credential, CredentialIssue, DeviceCode, Provider, UsageSnapshot, UsageWindow};
+use super::{Credential, CredentialIssue, DeviceCode, FetchIssue, Provider, UsageSnapshot, UsageWindow};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -13,7 +15,12 @@ use std::path::Path;
 const PROXY: &str = "https://cli-chat-proxy.grok.com/v1";
 const GRPC: &str = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
 
-pub struct Grok;
+#[derive(Default)]
+pub struct Grok {
+    // Serializes requests and history updates, including a manual refresh racing with a file change.
+    history: tokio::sync::Mutex<history::History>,
+    monitor: std::sync::Mutex<monitor::Monitor>,
+}
 
 #[derive(Deserialize)]
 struct BillingResp {
@@ -57,6 +64,11 @@ fn period_label(kind: Option<&str>) -> &'static str {
 }
 
 impl Grok {
+    fn record_credential_read(&self, path: Option<&Path>, auth: Result<&auth::Auth, auth::AuthError>) {
+        let stamp = monitor::Stamp::from_read(path.map(Path::to_owned), auth, chrono::Utc::now());
+        self.monitor.lock().unwrap().attempted(stamp);
+    }
+
     fn snapshot(&self, account_id: Option<&str>) -> UsageSnapshot {
         let mut snapshot = UsageSnapshot::empty(self, account_id);
         snapshot.managed = true;
@@ -78,14 +90,18 @@ impl Grok {
     fn changed(&self, current: &auth::Auth) -> UsageSnapshot {
         let mut snapshot = self.snapshot(Some(current.account_id()));
         snapshot.credential_issue = Some(CredentialIssue::Changed);
-        snapshot.error = Some("Grok CLI credentials changed during the request. Refresh again.".into());
+        snapshot.error = Some("Grok sign-in changed. Usage will update automatically.".into());
         snapshot
     }
 
     async fn fetch_local(&self, http: &reqwest::Client, expected_account: Option<&str>) -> UsageSnapshot {
         match auth::path() {
             Ok(path) => self.fetch_from_path(http, &path, expected_account, PROXY, GRPC).await,
-            Err(error) => self.auth_error(error),
+            Err(error) => {
+                self.history.lock().await.clear();
+                self.record_credential_read(None, Err(error));
+                self.auth_error(error)
+            }
         }
     }
 
@@ -97,18 +113,28 @@ impl Grok {
         proxy: &str,
         grpc: &str,
     ) -> UsageSnapshot {
-        let auth = match auth::read(path) {
+        let mut history = self.history.lock().await;
+        let auth = auth::read(path);
+        self.record_credential_read(Some(path), auth.as_ref().map_err(|error| *error));
+        let auth = match auth {
             Ok(auth) => auth,
-            Err(error) => return self.auth_error(error),
+            Err(error) => {
+                // With an unknown identity, retaining any previous account would be unsafe.
+                history.clear();
+                return self.auth_error(error);
+            }
         };
+        history.retain_account(path, &auth);
         if expected_account.is_some_and(|id| id != auth.account_id()) {
+            history.clear();
             return self.changed(&auth);
         }
         if auth.expired(chrono::Utc::now()) {
             let mut snapshot = self.snapshot(Some(auth.account_id()));
             snapshot.needs_auth = true;
             snapshot.credential_issue = Some(CredentialIssue::Expired);
-            return snapshot;
+            snapshot.login_hint = Some("Run `grok` to renew your session. Usage updates automatically when the sign-in changes.".into());
+            return history.finish(path, &auth, snapshot);
         }
 
         // Billing, plan and gRPC fallback all use this one captured identity and bearer.
@@ -117,14 +143,22 @@ impl Grok {
             Ok(current) if auth.same_account(&current) => {
                 // A normal same-account rotation does not invalidate successful usage.
                 // But an auth rejection for the old token must not label its replacement as expired.
-                if snapshot.needs_auth && auth.key != current.key {
+                let snapshot = if snapshot.needs_auth && auth.key != current.key {
                     self.changed(&current)
                 } else {
                     snapshot
-                }
+                };
+                history.finish(path, &current, snapshot)
             }
-            Ok(current) => self.changed(&current),
-            Err(error) => self.auth_error(error),
+            Ok(current) => {
+                history.clear();
+                self.changed(&current)
+            }
+            Err(error) => {
+                history.clear();
+                self.record_credential_read(Some(path), Err(error));
+                self.auth_error(error)
+            }
         }
     }
 
@@ -147,6 +181,7 @@ impl Grok {
             Ok(r) if r.status() == 401 || r.status() == 403 => {
                 snap.needs_auth = true;
                 snap.credential_issue = Some(CredentialIssue::Rejected);
+                snap.login_hint = Some("Run `grok login` to sign in again. Usage updates automatically.".into());
                 return snap;
             }
             Ok(r) => match r.error_for_status() {
@@ -154,16 +189,19 @@ impl Grok {
                     Ok(b) => b,
                     Err(e) => {
                         snap.error = Some(format!("Bad response: {e}"));
+                        snap.fetch_issue = Some(FetchIssue::Response);
                         return snap;
                     }
                 },
                 Err(e) => {
                     snap.error = Some(e.to_string());
+                    snap.fetch_issue = Some(FetchIssue::from_request(&e));
                     return snap;
                 }
             },
             Err(e) => {
                 snap.error = Some(e.to_string());
+                snap.fetch_issue = Some(FetchIssue::from_request(&e));
                 return snap;
             }
         };
@@ -192,7 +230,14 @@ impl Grok {
         // The proxy omits the percent for some plans; grok.com's billing RPC carries it.
         let pct = match pct {
             Some(p) => Some(p),
-            None => grpc_usage_percent(http, &auth.key, grpc).await,
+            None => match grpc_usage_percent(http, &auth.key, grpc).await {
+                Ok(percent) => percent,
+                Err(issue) => {
+                    snap.fetch_issue = Some(issue);
+                    snap.error = Some("Couldn't load Grok's usage percentage.".into());
+                    return snap;
+                }
+            },
         };
         match pct {
             Some(p) => {
@@ -222,7 +267,12 @@ impl Provider for Grok {
         "Grok"
     }
     fn login_hint(&self) -> Option<&'static str> {
-        Some("Run `grok login` (or any grok command to refresh), then refresh.")
+        Some("Sign in with `grok login`. Usage updates automatically.")
+    }
+
+    fn credentials_changed(&self) -> bool {
+        let stamp = monitor::Stamp::read(auth::path(), chrono::Utc::now());
+        self.monitor.lock().unwrap().observe(stamp)
     }
 
     async fn fetch_discovered(&self, http: &reqwest::Client) -> Option<Vec<UsageSnapshot>> {
@@ -245,7 +295,7 @@ impl Provider for Grok {
 
 /// Calls grok.com `GetGrokCreditsConfig` (gRPC-web) and returns used percent.
 /// proto3 omits a zero float, so an active period with no percent field means 0%.
-async fn grpc_usage_percent(http: &reqwest::Client, token: &str, endpoint: &str) -> Option<f64> {
+async fn grpc_usage_percent(http: &reqwest::Client, token: &str, endpoint: &str) -> Result<Option<f64>, FetchIssue> {
     let body = http
         .post(endpoint)
         .bearer_auth(token)
@@ -257,32 +307,38 @@ async fn grpc_usage_percent(http: &reqwest::Client, token: &str, endpoint: &str)
         .timeout(std::time::Duration::from_secs(6))
         .send()
         .await
-        .ok()?
+        .map_err(|e| FetchIssue::from_request(&e))?
         .error_for_status()
-        .ok()?
+        .map_err(|e| FetchIssue::from_request(&e))?
         .bytes()
         .await
-        .ok()?;
+        .map_err(|e| FetchIssue::from_request(&e))?;
+    decode_grpc_usage(&body)
+}
+
+fn decode_grpc_usage(body: &[u8]) -> Result<Option<f64>, FetchIssue> {
     // First data frame: flag(1) + len(4) + payload.
     if body.len() < 5 || body[0] != 0 {
-        return None;
+        return Err(FetchIssue::Response);
     }
-    let len = u32::from_be_bytes(body[1..5].try_into().ok()?) as usize;
-    let payload = body.get(5..5 + len)?;
-    let config = pb::fields(payload)?.into_iter().find(|f| f.num == 1)?.bytes?;
-    let fields = pb::fields(config)?;
+    let len = u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize;
+    let payload = body.get(5..5 + len).ok_or(FetchIssue::Response)?;
+    let outer = pb::fields(payload).ok_or(FetchIssue::Response)?;
+    let Some(config) = outer.iter().find(|f| f.num == 1).and_then(|f| f.bytes) else { return Ok(None); };
+    let fields = pb::fields(config).ok_or(FetchIssue::Response)?;
     if let Some(p) = fields.iter().find(|f| f.num == 1).and_then(|f| f.fixed32) {
         let p = f32::from_bits(p) as f64;
-        return (0.0..=100.0).contains(&p).then_some(p);
+        return if (0.0..=100.0).contains(&p) { Ok(Some(p)) } else { Err(FetchIssue::Response) };
     }
     // Field 8 = current period { 1: type, 2: start ts, 3: end ts }.
-    let period = pb::fields(fields.iter().find(|f| f.num == 8)?.bytes?)?;
+    let Some(period) = fields.iter().find(|f| f.num == 8).and_then(|f| f.bytes) else { return Ok(None); };
+    let period = pb::fields(period).ok_or(FetchIssue::Response)?;
     let ts = |n| {
         let m = pb::fields(period.iter().find(|f| f.num == n)?.bytes?)?;
         m.iter().find(|f| f.num == 1)?.varint.map(|v| v as i64)
     };
     let now = chrono::Utc::now().timestamp();
-    (ts(2)? <= now && ts(3)? > now).then_some(0.0)
+    Ok(ts(2).zip(ts(3)).and_then(|(start, end)| (start <= now && end > now).then_some(0.0)))
 }
 
 /// Just enough protobuf decoding for the billing response.

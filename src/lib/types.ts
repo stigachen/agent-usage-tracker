@@ -15,6 +15,9 @@ export interface UsageSnapshot {
   error: string | null;
   needsAuth: boolean;
   credentialIssue?: "missing" | "unreadable" | "invalid" | "unsupported" | "ambiguous" | "expired" | "rejected" | "changed";
+  fetchIssue?: "network" | "service" | "response";
+  stale?: boolean;
+  lastSuccessAt?: string;
   managed: boolean;
   loginHint: string | null;
   note: string | null;

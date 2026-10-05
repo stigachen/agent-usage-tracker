@@ -6,7 +6,8 @@
   import { Reorder } from "./reorder.svelte";
   import type { UsageSnapshot } from "./types";
   import { language, localize, t } from "./language";
-  import { resetText } from "./i18n";
+  import { lastSuccessText, resetText } from "./i18n";
+  import { grokStatus } from "./usage-status";
 
   let {
     snaps,
@@ -77,6 +78,7 @@
   {/if}
   {#each g.rows as { s, worst, left }, j (s.providerId + (s.accountId ?? ""))}
     {@const i = gi + j}
+    {@const status = grokStatus(s)}
     <button class="row" onclick={() => onselect(s.providerId)} in:fly={{ y: 6, duration: 200, delay: i * 30 }}>
       <div class="logo"><ProviderIcon id={s.providerId} /></div>
       <div class="mid">
@@ -84,7 +86,12 @@
           {s.providerName}
           {#if s.account}<span class="muted acc">{s.account}</span>{/if}
         </div>
-        {#if s.needsAuth || !s.accountId}
+        {#if status}
+          <span class="small" class:err={status !== "Not signed in"} class:muted={status === "Not signed in"}>{$t(status)}</span>
+          {#if s.stale && s.lastSuccessAt}
+            <span class="muted small" title={new Date(s.lastSuccessAt).toLocaleString($language.locale)}>{lastSuccessText($language.locale, s.lastSuccessAt, now)}</span>
+          {/if}
+        {:else if s.needsAuth || !s.accountId}
           <span class="muted small">{$t("Not connected")}</span>
         {:else if s.error}
           <span class="err small">{$t("Couldn't load")}</span>
@@ -97,8 +104,11 @@
           <span class="muted small">{$t("Unlimited")}</span>
         {/if}
       </div>
-      {#if left !== null && !s.needsAuth && !s.error}
-        <div class="pct {tone(left)}-text">{left}<span>%</span></div>
+      {#if left !== null && (s.stale || (!s.needsAuth && !s.error && !status))}
+        <div class="pct {s.stale ? 'stale-text' : `${tone(left)}-text`}">
+          {left}<span>%</span>
+          {#if s.stale}<div class="history-label">{$t("Previous")}</div>{/if}
+        </div>
       {/if}
     </button>
   {/each}
@@ -181,4 +191,6 @@
   .ok-text { color: var(--fg); }
   .warn-text { color: #ff9f0a; }
   .danger-text { color: #ff453a; }
+  .stale-text { color: var(--muted); }
+  .history-label { font-size: 10px; font-weight: 400; letter-spacing: normal; margin-top: 2px; }
 </style>
