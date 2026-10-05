@@ -6,6 +6,20 @@ pub mod grok;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+/// Optional detail for providers whose credentials are managed by another app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CredentialIssue {
+    Missing,
+    Unreadable,
+    Invalid,
+    Unsupported,
+    Ambiguous,
+    Expired,
+    Rejected,
+    Changed,
+}
+
 /// One quota window, e.g. "Premium requests" for the current month.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +43,8 @@ pub struct UsageSnapshot {
     pub windows: Vec<UsageWindow>,
     pub error: Option<String>,
     pub needs_auth: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_issue: Option<CredentialIssue>,
     /// Credentials are owned by another tool (e.g. Codex CLI); the app can't sign in or out.
     pub managed: bool,
     pub login_hint: Option<String>,
@@ -78,6 +94,7 @@ impl UsageSnapshot {
             windows: vec![],
             error: None,
             needs_auth: false,
+            credential_issue: None,
             managed: false,
             login_hint: p.login_hint().map(Into::into),
             note: None,
@@ -127,6 +144,19 @@ pub trait Provider: Send + Sync {
     fn discover(&self) -> Vec<Credential> {
         vec![]
     }
+    /// Fetch local accounts, or return None to use the app's stored accounts.
+    /// Providers may override this to capture CLI credentials once and report read failures.
+    async fn fetch_discovered(&self, http: &reqwest::Client) -> Option<Vec<UsageSnapshot>> {
+        let credentials = self.discover();
+        if credentials.is_empty() {
+            return None;
+        }
+        let mut snapshots = Vec::with_capacity(credentials.len());
+        for credential in credentials {
+            snapshots.push(self.fetch(http, &credential.account_id, &credential.secret).await);
+        }
+        Some(snapshots)
+    }
     async fn fetch(&self, http: &reqwest::Client, account_id: &str, secret: &str) -> UsageSnapshot;
     async fn start_login(&self, http: &reqwest::Client) -> Result<DeviceCode, String>;
     /// Polls until the user authorizes.
@@ -135,4 +165,55 @@ pub trait Provider: Send + Sync {
 
 pub fn registry() -> Vec<Box<dyn Provider>> {
     vec![Box::new(copilot::Copilot), Box::new(codex::Codex), Box::new(grok::Grok), Box::new(claude::Claude)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ExistingProvider {
+        has_local_accounts: bool,
+    }
+
+    #[async_trait]
+    impl Provider for ExistingProvider {
+        fn id(&self) -> &'static str { "existing" }
+        fn name(&self) -> &'static str { "Existing provider" }
+        fn discover(&self) -> Vec<Credential> {
+            if !self.has_local_accounts { return vec![]; }
+            vec![
+                Credential { account_id: "first".into(), secret: "first-secret".into() },
+                Credential { account_id: "second".into(), secret: "second-secret".into() },
+            ]
+        }
+        async fn fetch(&self, _http: &reqwest::Client, account_id: &str, secret: &str) -> UsageSnapshot {
+            assert_eq!(secret, format!("{account_id}-secret"));
+            let mut snapshot = UsageSnapshot::empty(self, Some(account_id));
+            if account_id == "second" { snapshot.error = Some("test fetch failure".into()); }
+            snapshot
+        }
+        async fn start_login(&self, _http: &reqwest::Client) -> Result<DeviceCode, String> {
+            unreachable!()
+        }
+        async fn finish_login(&self, _http: &reqwest::Client, _code: DeviceCode) -> Result<Credential, String> {
+            unreachable!()
+        }
+    }
+
+    #[tokio::test]
+    async fn default_discovery_keeps_account_secret_pairing_order_and_fetch_errors() {
+        let provider = ExistingProvider { has_local_accounts: true };
+        let snapshots = provider.fetch_discovered(&reqwest::Client::new()).await.unwrap();
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots[0].account_id.as_deref(), Some("first"));
+        assert!(snapshots[0].error.is_none());
+        assert_eq!(snapshots[1].account_id.as_deref(), Some("second"));
+        assert_eq!(snapshots[1].error.as_deref(), Some("test fetch failure"));
+    }
+
+    #[tokio::test]
+    async fn default_discovery_preserves_stored_account_fallback() {
+        let provider = ExistingProvider { has_local_accounts: false };
+        assert!(provider.fetch_discovered(&reqwest::Client::new()).await.is_none());
+    }
 }

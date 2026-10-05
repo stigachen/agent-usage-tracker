@@ -1,21 +1,19 @@
 //! Grok (SuperGrok / X Premium) usage via the Grok CLI's billing proxy.
-//! Credentials are owned and refreshed by the `grok` CLI in `~/.grok/auth.json`; read-only here.
+//! Credentials are owned and refreshed by the `grok` CLI; read-only here.
 
-use super::{Credential, DeviceCode, Provider, UsageSnapshot, UsageWindow};
+mod auth;
+#[cfg(test)]
+mod tests;
+
+use super::{Credential, CredentialIssue, DeviceCode, Provider, UsageSnapshot, UsageWindow};
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::Path;
 
 const PROXY: &str = "https://cli-chat-proxy.grok.com/v1";
+const GRPC: &str = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
 
 pub struct Grok;
-
-#[derive(Deserialize)]
-struct AuthEntry {
-    key: String,
-    email: Option<String>,
-    expires_at: Option<String>,
-}
 
 #[derive(Deserialize)]
 struct BillingResp {
@@ -49,24 +47,6 @@ struct SettingsResp {
     subscription_tier_display: Option<String>,
 }
 
-fn auth_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".grok/auth.json"))
-}
-
-/// auth.json is a map keyed by issuer::client; take the first entry.
-fn read_auth() -> Option<AuthEntry> {
-    let bytes = std::fs::read(auth_path()?).ok()?;
-    let map: std::collections::HashMap<String, AuthEntry> = serde_json::from_slice(&bytes).ok()?;
-    map.into_values().next()
-}
-
-fn expired(a: &AuthEntry) -> bool {
-    a.expires_at
-        .as_deref()
-        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-        .is_some_and(|t| t < chrono::Utc::now())
-}
-
 fn period_label(kind: Option<&str>) -> &'static str {
     match kind {
         Some(k) if k.contains("WEEKLY") => "Weekly limit",
@@ -76,39 +56,88 @@ fn period_label(kind: Option<&str>) -> &'static str {
     }
 }
 
-#[async_trait]
-impl Provider for Grok {
-    fn id(&self) -> &'static str {
-        "grok"
-    }
-    fn name(&self) -> &'static str {
-        "Grok"
-    }
-    fn login_hint(&self) -> Option<&'static str> {
-        Some("Run `grok login` (or any grok command to refresh), then refresh.")
+impl Grok {
+    fn snapshot(&self, account_id: Option<&str>) -> UsageSnapshot {
+        let mut snapshot = UsageSnapshot::empty(self, account_id);
+        snapshot.managed = true;
+        snapshot
     }
 
-    fn discover(&self) -> Vec<Credential> {
-        read_auth()
-            .and_then(|a| a.email)
-            .map(|account_id| Credential { account_id, secret: String::new() })
-            .into_iter()
-            .collect()
-    }
-
-    async fn fetch(&self, http: &reqwest::Client, account_id: &str, _secret: &str) -> UsageSnapshot {
-        let mut snap = UsageSnapshot::empty(self, Some(account_id));
-        snap.managed = true;
-        let Some(auth) = read_auth() else {
-            snap.needs_auth = true;
-            return snap;
-        };
-        if expired(&auth) {
-            snap.needs_auth = true;
-            return snap;
+    fn auth_error(&self, error: auth::AuthError) -> UsageSnapshot {
+        let mut snapshot = self.snapshot(None);
+        snapshot.credential_issue = Some(error.issue());
+        snapshot.needs_auth = matches!(error, auth::AuthError::Missing | auth::AuthError::Unsupported);
+        if !snapshot.needs_auth {
+            snapshot.error = Some(error.message().into());
         }
+        // Existing no-account cards render loginHint; keep read failures actionable there, too.
+        snapshot.login_hint = Some(error.message().into());
+        snapshot
+    }
+
+    fn changed(&self, current: &auth::Auth) -> UsageSnapshot {
+        let mut snapshot = self.snapshot(Some(current.account_id()));
+        snapshot.credential_issue = Some(CredentialIssue::Changed);
+        snapshot.error = Some("Grok CLI credentials changed during the request. Refresh again.".into());
+        snapshot
+    }
+
+    async fn fetch_local(&self, http: &reqwest::Client, expected_account: Option<&str>) -> UsageSnapshot {
+        match auth::path() {
+            Ok(path) => self.fetch_from_path(http, &path, expected_account, PROXY, GRPC).await,
+            Err(error) => self.auth_error(error),
+        }
+    }
+
+    async fn fetch_from_path(
+        &self,
+        http: &reqwest::Client,
+        path: &Path,
+        expected_account: Option<&str>,
+        proxy: &str,
+        grpc: &str,
+    ) -> UsageSnapshot {
+        let auth = match auth::read(path) {
+            Ok(auth) => auth,
+            Err(error) => return self.auth_error(error),
+        };
+        if expected_account.is_some_and(|id| id != auth.account_id()) {
+            return self.changed(&auth);
+        }
+        if auth.expired(chrono::Utc::now()) {
+            let mut snapshot = self.snapshot(Some(auth.account_id()));
+            snapshot.needs_auth = true;
+            snapshot.credential_issue = Some(CredentialIssue::Expired);
+            return snapshot;
+        }
+
+        // Billing, plan and gRPC fallback all use this one captured identity and bearer.
+        let snapshot = self.fetch_usage(http, &auth, proxy, grpc).await;
+        match auth::read(path) {
+            Ok(current) if auth.same_account(&current) => {
+                // A normal same-account rotation does not invalidate successful usage.
+                // But an auth rejection for the old token must not label its replacement as expired.
+                if snapshot.needs_auth && auth.key != current.key {
+                    self.changed(&current)
+                } else {
+                    snapshot
+                }
+            }
+            Ok(current) => self.changed(&current),
+            Err(error) => self.auth_error(error),
+        }
+    }
+
+    async fn fetch_usage(
+        &self,
+        http: &reqwest::Client,
+        auth: &auth::Auth,
+        proxy: &str,
+        grpc: &str,
+    ) -> UsageSnapshot {
+        let mut snap = self.snapshot(Some(auth.account_id()));
         let get = |path: &str| {
-            http.get(format!("{PROXY}{path}"))
+            http.get(format!("{proxy}{path}"))
                 .bearer_auth(&auth.key)
                 .header("x-xai-token-auth", "xai-grok-cli")
                 .header("Accept", "application/json")
@@ -117,6 +146,7 @@ impl Provider for Grok {
         let body: BillingResp = match get("/billing?format=credits").send().await {
             Ok(r) if r.status() == 401 || r.status() == 403 => {
                 snap.needs_auth = true;
+                snap.credential_issue = Some(CredentialIssue::Rejected);
                 return snap;
             }
             Ok(r) => match r.error_for_status() {
@@ -162,7 +192,7 @@ impl Provider for Grok {
         // The proxy omits the percent for some plans; grok.com's billing RPC carries it.
         let pct = match pct {
             Some(p) => Some(p),
-            None => grpc_usage_percent(http, &auth.key).await,
+            None => grpc_usage_percent(http, &auth.key, grpc).await,
         };
         match pct {
             Some(p) => {
@@ -181,6 +211,28 @@ impl Provider for Grok {
         }
         snap
     }
+}
+
+#[async_trait]
+impl Provider for Grok {
+    fn id(&self) -> &'static str {
+        "grok"
+    }
+    fn name(&self) -> &'static str {
+        "Grok"
+    }
+    fn login_hint(&self) -> Option<&'static str> {
+        Some("Run `grok login` (or any grok command to refresh), then refresh.")
+    }
+
+    async fn fetch_discovered(&self, http: &reqwest::Client) -> Option<Vec<UsageSnapshot>> {
+        // Return a managed placeholder on failure rather than losing the reason in discovery.
+        Some(vec![self.fetch_local(http, None).await])
+    }
+
+    async fn fetch(&self, http: &reqwest::Client, account_id: &str, _secret: &str) -> UsageSnapshot {
+        self.fetch_local(http, Some(account_id)).await
+    }
 
     async fn start_login(&self, _http: &reqwest::Client) -> Result<DeviceCode, String> {
         Err("Grok accounts come from the Grok CLI. Run `grok login`.".into())
@@ -193,9 +245,9 @@ impl Provider for Grok {
 
 /// Calls grok.com `GetGrokCreditsConfig` (gRPC-web) and returns used percent.
 /// proto3 omits a zero float, so an active period with no percent field means 0%.
-async fn grpc_usage_percent(http: &reqwest::Client, token: &str) -> Option<f64> {
+async fn grpc_usage_percent(http: &reqwest::Client, token: &str, endpoint: &str) -> Option<f64> {
     let body = http
-        .post("https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig")
+        .post(endpoint)
         .bearer_auth(token)
         .header("Content-Type", "application/grpc-web+proto")
         .header("x-grpc-web", "1")

@@ -14,6 +14,7 @@ export interface UsageSnapshot {
   windows: UsageWindow[];
   error: string | null;
   needsAuth: boolean;
+  credentialIssue?: "missing" | "unreadable" | "invalid" | "unsupported" | "ambiguous" | "expired" | "rejected" | "changed";
   managed: boolean;
   loginHint: string | null;
   note: string | null;
