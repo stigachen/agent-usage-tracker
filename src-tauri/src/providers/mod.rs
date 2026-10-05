@@ -20,6 +20,23 @@ pub enum CredentialIssue {
     Changed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FetchIssue {
+    Network,
+    Service,
+    Response,
+}
+
+impl FetchIssue {
+    /// Classify HTTP operations, including reading the response body. reqwest may mark
+    /// interrupted transfers as decode errors; content is parsed and classified separately.
+    pub fn from_request(error: &reqwest::Error) -> Self {
+        if error.is_status() { Self::Service }
+        else { Self::Network }
+    }
+}
+
 /// One quota window, e.g. "Premium requests" for the current month.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +62,12 @@ pub struct UsageSnapshot {
     pub needs_auth: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential_issue: Option<CredentialIssue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fetch_issue: Option<FetchIssue>,
+    /// Retained historical usage, never eligible for the tray's current balance.
+    pub stale: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_success_at: Option<String>,
     /// Credentials are owned by another tool (e.g. Codex CLI); the app can't sign in or out.
     pub managed: bool,
     pub login_hint: Option<String>,
@@ -95,6 +118,9 @@ impl UsageSnapshot {
             error: None,
             needs_auth: false,
             credential_issue: None,
+            fetch_issue: None,
+            stale: false,
+            last_success_at: None,
             managed: false,
             login_hint: p.login_hint().map(Into::into),
             note: None,
@@ -109,6 +135,9 @@ impl UsageSnapshot {
     /// Lowest remaining ratio across limited windows, in 0..=1.
     /// Matches the big number shown on the card.
     pub fn min_remaining(&self) -> Option<f64> {
+        if self.stale || self.needs_auth || self.error.is_some() || self.credential_issue.is_some() || self.fetch_issue.is_some() {
+            return None;
+        }
         self.windows
             .iter()
             .filter_map(|w| w.limit.filter(|l| *l > 0.0).map(|l| (1.0 - w.used / l).clamp(0.0, 1.0)))
@@ -131,7 +160,7 @@ pub struct Credential {
     pub secret: String,
 }
 
-/// Providers are stateless; credential storage is handled by the app.
+/// Credential storage belongs to the app or the provider's CLI. Providers may keep in-memory usage history.
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn id(&self) -> &'static str;
@@ -143,6 +172,11 @@ pub trait Provider: Send + Sync {
     /// Accounts found on this machine (e.g. a CLI's credential file). Not persisted.
     fn discover(&self) -> Vec<Credential> {
         vec![]
+    }
+    /// Called periodically by the serialized refresh loop. True requests a local-provider refresh.
+    /// The first call establishes a baseline before any network requests start.
+    fn credentials_changed(&self) -> bool {
+        false
     }
     /// Fetch local accounts, or return None to use the app's stored accounts.
     /// Providers may override this to capture CLI credentials once and report read failures.
@@ -164,7 +198,7 @@ pub trait Provider: Send + Sync {
 }
 
 pub fn registry() -> Vec<Box<dyn Provider>> {
-    vec![Box::new(copilot::Copilot), Box::new(codex::Codex), Box::new(grok::Grok), Box::new(claude::Claude)]
+    vec![Box::new(copilot::Copilot), Box::new(codex::Codex), Box::new(grok::Grok::default()), Box::new(claude::Claude)]
 }
 
 #[cfg(test)]

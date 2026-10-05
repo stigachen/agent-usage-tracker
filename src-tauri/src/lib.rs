@@ -87,18 +87,35 @@ fn sort_snapshots(snaps: &mut [UsageSnapshot], state: &AppState, cfg: &store::Co
     snaps.sort_by_key(rank);
 }
 
-/// Sorts and publishes snapshots. `fresh` replaces the cache; `None` re-sorts what's cached.
+enum SnapshotUpdate {
+    All(Vec<UsageSnapshot>),
+    Provider(&'static str, Vec<UsageSnapshot>),
+    Keep,
+}
+
+impl SnapshotUpdate {
+    fn apply(self, cache: &mut Vec<UsageSnapshot>) {
+        match self {
+            Self::All(snaps) => *cache = snaps,
+            Self::Provider(id, snaps) => {
+                cache.retain(|snapshot| snapshot.provider_id != id);
+                cache.extend(snaps);
+            }
+            Self::Keep => {}
+        }
+    }
+}
+
+/// Sorts and publishes full or provider-specific updates under the same lock.
 /// Everything happens under the snapshots write lock so a refresh and a re-sort can't
 /// interleave and publish an older copy last.
-async fn publish(app: &AppHandle, state: &AppState, fresh: Option<Vec<UsageSnapshot>>) {
+async fn publish(app: &AppHandle, state: &AppState, fresh: SnapshotUpdate) {
     // Keep settings stable through the tray update so an in-flight refresh can't
     // put an old language back after set_language has completed.
     let store = state.store.read().await;
     let cfg = &store.config;
     let mut cache = state.snapshots.write().await;
-    if let Some(snaps) = fresh {
-        *cache = snaps;
-    }
+    fresh.apply(&mut cache);
     sort_snapshots(&mut cache, state, cfg);
     for s in cache.iter_mut() {
         s.hidden = s.account_id.as_ref().is_some_and(|id| {
@@ -142,12 +159,12 @@ async fn refresh_all(app: &AppHandle, state: &AppState) {
             snaps.push(snap);
         }
     }
-    publish(app, state, Some(snaps)).await;
+    publish(app, state, SnapshotUpdate::All(snaps)).await;
 }
 
 /// Re-applies order and visibility to the cached snapshots, without refetching.
 async fn resort(app: &AppHandle, state: &AppState) {
-    publish(app, state, None).await;
+    publish(app, state, SnapshotUpdate::Keep).await;
 }
 
 #[tauri::command]
@@ -607,17 +624,36 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Background refresh loop: sleeps until the interval elapses or someone pokes `wake`.
+            // One worker serializes manual, scheduled and credential-triggered requests.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // Establish the credential baseline before any request can observe a CLI change.
+                for provider in &state.providers { provider.credentials_changed(); }
                 migrate_legacy(&state).await;
+                refresh_all(&handle, &state).await;
+                let mut next_full = tokio::time::Instant::now()
+                    + Duration::from_secs(state.store.read().await.config.refresh_secs);
+                let mut credentials = tokio::time::interval(Duration::from_secs(2));
+                credentials.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
-                    refresh_all(&handle, &state).await;
-                    let secs = state.store.read().await.config.refresh_secs;
                     tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(secs)) => {}
+                        _ = tokio::time::sleep_until(next_full) => {}
                         _ = state.wake.notified() => {}
+                        _ = credentials.tick() => {
+                            for provider in &state.providers {
+                                if provider.credentials_changed() {
+                                    if let Some(snaps) = provider.fetch_discovered(&state.http).await {
+                                        publish(&handle, &state, SnapshotUpdate::Provider(provider.id(), snaps)).await;
+                                    }
+                                }
+                            }
+                            // Local changes must not restart other providers' refresh interval.
+                            continue;
+                        }
                     }
+                    refresh_all(&handle, &state).await;
+                    next_full = tokio::time::Instant::now()
+                        + Duration::from_secs(state.store.read().await.config.refresh_secs);
                 }
             });
             Ok(())
@@ -762,6 +798,37 @@ mod tests {
         assert_eq!(Locale::English.tray_tooltip(title.as_deref()), "Agent Usage — 75% remaining");
         assert_eq!(Locale::English.tray_tooltip(tray_title(&snaps, &TrayDisplay::IconOnly).as_deref()), "Agent Usage");
         assert_eq!(Locale::English.tray_tooltip(tray_title(&[], &TrayDisplay::Lowest).as_deref()), "Agent Usage");
+    }
+
+    #[test]
+    fn tray_excludes_historical_and_failed_usage_in_lowest_and_pinned_modes() {
+        let mut stale = snapshot("grok-user", 99.0);
+        stale.provider_id = "grok".into();
+        stale.stale = true;
+        let pinned = TrayDisplay::Pinned { provider: "grok".into(), account: "grok-user".into() };
+        assert_eq!(tray_title(&[stale.clone()], &pinned), None);
+        assert_eq!(tray_title(&[stale.clone(), snapshot("fresh", 20.0)], &TrayDisplay::Lowest).as_deref(), Some("80%"));
+        // Defense in depth: failed usage cannot reach the tray even without the stale flag.
+        stale.stale = false;
+        stale.needs_auth = true;
+        assert_eq!(tray_title(&[stale.clone()], &pinned), None);
+        stale.needs_auth = false;
+        stale.error = Some("network failed".into());
+        assert_eq!(tray_title(&[stale], &pinned), None);
+    }
+
+    #[test]
+    fn targeted_refresh_replaces_only_its_provider_and_preserves_other_snapshots() {
+        let copilot = snapshot("copilot-user", 20.0);
+        let mut old = snapshot("old", 30.0);
+        old.provider_id = "grok".into();
+        let mut current = snapshot("new", 40.0);
+        current.provider_id = "grok".into();
+        let mut cache = vec![copilot.clone(), old];
+        SnapshotUpdate::Provider("grok", vec![current]).apply(&mut cache);
+        assert_eq!(cache.len(), 2);
+        assert_eq!(serde_json::to_value(&cache[0]).unwrap(), serde_json::to_value(copilot).unwrap());
+        assert_eq!(cache[1].account_id.as_deref(), Some("new"));
     }
 
     #[test]

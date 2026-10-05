@@ -9,6 +9,7 @@
   import Settings from "$lib/Settings.svelte";
   import type { UsageSnapshot } from "$lib/types";
   import { language, refreshLanguage, t } from "$lib/language";
+  import { hasGrokProblem } from "$lib/usage-status";
 
   const MAX_HEIGHT = 600;
   let maxHeight = $state(MAX_HEIGHT);
@@ -30,27 +31,27 @@
       }, {}),
     ),
   );
-  // A provider is connected once it has an account, even an expired one; a snapshot
-  // without accountId is only the "no accounts yet" placeholder.
-  let connected = $derived(groups.filter((g) => g.some((s) => s.accountId)));
-  let unconnected = $derived(groups.filter((g) => !g.some((s) => s.accountId)).map((g) => g[0]));
+  // Keep unreadable Grok logins visible even when their account ID cannot be established.
+  const hasStatus = (s: UsageSnapshot) => !!s.accountId || hasGrokProblem(s);
+  let connected = $derived(groups.filter((g) => g.some(hasStatus)));
+  let unconnected = $derived(groups.filter((g) => !g.some(hasStatus)).map((g) => g[0]));
   let tab = $state("overview");
   let tabs = $derived([
     { id: "overview", name: $t("Overview") },
     ...connected.map((g) => ({ id: g[0].providerId, name: g[0].providerName })),
   ]);
   // Accounts the user hid stay in their provider tab but not in the overview.
-  let overviewSnaps = $derived(connected.flat().filter((s) => s.accountId && !s.hidden));
+  let overviewSnaps = $derived(connected.flat().filter((s) => hasStatus(s) && !s.hidden));
   // Unconnected providers have no tab but can still be opened to sign in.
   let activeGroup = $derived(groups.find((g) => g[0].providerId === tab));
 
   // Ticks once a minute so relative times stay fresh while the panel is open.
   let now = $state(Date.now());
-  let updated = $derived(snaps[0] ? new Date(snaps[0].fetchedAt).getTime() : null);
+  let updated = $derived(Math.max(0, ...snaps.map((s) => Date.parse(s.fetchedAt) || 0)));
   let updatedText = $derived.by(() => {
     if (!updated) return "";
     const m = Math.floor((now - updated) / 60_000);
-    return m < 1 ? $t("Updated just now") : m < 60 ? $t("Updated {minutes}m ago", { minutes: m }) : $t("Updated {hours}h ago", { hours: Math.floor(m / 60) });
+    return m < 1 ? $t("Checked just now") : m < 60 ? $t("Checked {minutes}m ago", { minutes: m }) : $t("Checked {hours}h ago", { hours: Math.floor(m / 60) });
   });
 
   $effect(() => { document.documentElement.lang = $language.locale; });

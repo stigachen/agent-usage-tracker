@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
@@ -12,7 +12,7 @@ const NO_HTTP: &str = "http://127.0.0.1:0";
 const BILLING: &str = r#"{"config":{"creditUsagePercent":23,"currentPeriod":{"type":"WEEKLY","end":"2099-01-01T00:00:00Z"}}}"#;
 const SETTINGS: &str = r#"{"subscription_tier_display":"SuperGrok"}"#;
 
-struct Fixture(PathBuf);
+struct Fixture(PathBuf, Grok);
 
 impl Fixture {
     fn new() -> Self {
@@ -24,7 +24,7 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         std::fs::create_dir(&directory).unwrap();
-        Self(directory.join("auth.json"))
+        Self(directory.join("auth.json"), Grok::default())
     }
 
     fn write(&self, entry: Value) {
@@ -32,7 +32,21 @@ impl Fixture {
     }
 
     async fn fetch(&self, endpoint: &str) -> UsageSnapshot {
-        Grok.fetch_from_path(&client(), &self.0, None, endpoint, endpoint).await
+        self.1.fetch_from_path(&client(), &self.0, None, endpoint, endpoint).await
+    }
+
+    async fn seed(&self) -> UsageSnapshot {
+        self.write(entry("a@example.com", "original-token"));
+        let server = Server::usage(|_| {});
+        let snapshot = self.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(snapshot.windows[0].used, 23.0);
+        snapshot
+    }
+
+    fn poll(&self) -> bool {
+        let stamp = monitor::Stamp::read(Ok(self.0.clone()), chrono::Utc::now());
+        self.1.monitor.lock().unwrap().observe(stamp)
     }
 }
 
@@ -66,12 +80,21 @@ impl Server {
         responses: Vec<(u16, Vec<u8>)>,
         mut on_request: impl FnMut(usize) + Send + 'static,
     ) -> Self {
+        Self::respond(responses.len(), move |index, stream| {
+            on_request(index);
+            let (status, body) = &responses[index];
+            write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+            stream.write_all(body).unwrap();
+        })
+    }
+
+    fn respond(count: usize, mut respond: impl FnMut(usize, &mut TcpStream) + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
         let worker = thread::spawn(move || {
             let mut requests = Vec::new();
-            for (index, (status, body)) in responses.into_iter().enumerate() {
+            for index in 0..count {
                 let deadline = Instant::now() + Duration::from_secs(10);
                 let mut stream = loop {
                     match listener.accept() {
@@ -109,9 +132,7 @@ impl Server {
                     bytes.extend_from_slice(&buffer[..count]);
                 }
                 requests.push(headers);
-                on_request(index);
-                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
-                stream.write_all(&body).unwrap();
+                respond(index, &mut stream);
             }
             requests
         });
@@ -120,6 +141,16 @@ impl Server {
 
     fn usage(on_request: impl FnMut(usize) + Send + 'static) -> Self {
         Self::start(vec![(200, BILLING.as_bytes().to_vec()), (200, SETTINGS.as_bytes().to_vec())], on_request)
+    }
+
+    fn partial_body() -> (Self, std::sync::mpsc::Sender<()>) {
+        let (release, wait) = std::sync::mpsc::channel();
+        let server = Self::respond(1, move |_, stream| {
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{").unwrap();
+            // Keep the body incomplete until the test closes it, or the client times out.
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        (server, release)
     }
 
     fn finish(self, token: &str) -> Vec<String> {
@@ -171,7 +202,7 @@ async fn does_not_send_expired_credentials_or_query_an_unexpected_account() {
     assert!(snapshot.needs_auth);
 
     fixture.write(entry("b@example.com", "new-token"));
-    let snapshot = Grok.fetch_from_path(&client(), &fixture.0, Some("a@example.com"), NO_HTTP, NO_HTTP).await;
+    let snapshot = fixture.1.fetch_from_path(&client(), &fixture.0, Some("a@example.com"), NO_HTTP, NO_HTTP).await;
     assert_no_usage(&snapshot, CredentialIssue::Changed);
     assert_eq!(snapshot.account_id.as_deref(), Some("b@example.com"));
     assert!(!snapshot.needs_auth);
@@ -303,4 +334,388 @@ async fn grpc_fallback_uses_the_same_bearer_and_rechecks_identity_afterwards() {
         let requests = server.finish("original-token");
         assert!(requests[2].starts_with("POST / "));
     }
+}
+
+#[tokio::test]
+async fn retains_last_success_through_expiry_and_clears_staleness_on_recovery() {
+    let fixture = Fixture::new();
+    let success = fixture.seed().await;
+    assert_eq!(success.last_success_at, Some(success.fetched_at.clone()));
+    assert!(!success.stale);
+
+    let mut expired = entry("a@example.com", "original-token");
+    expired["expires_at"] = json!("2000-01-01T00:00:00Z");
+    fixture.write(expired);
+    for _ in 0..2 {
+        let failed = fixture.fetch(NO_HTTP).await;
+        assert_eq!(failed.credential_issue, Some(CredentialIssue::Expired));
+        assert!(failed.stale);
+        assert!(failed.needs_auth);
+        assert_eq!(failed.windows[0].used, 23.0);
+        assert_eq!(failed.last_success_at, success.last_success_at);
+        assert_eq!(failed.min_remaining(), None);
+    }
+
+    fixture.write(entry("a@example.com", "renewed-token"));
+    let server = Server::usage(|_| {});
+    let recovered = fixture.fetch(&server.endpoint).await;
+    server.finish("renewed-token");
+    assert!(!recovered.stale);
+    assert!(!recovered.needs_auth);
+    assert_eq!(recovered.credential_issue, None);
+    assert_eq!(recovered.last_success_at, Some(recovered.fetched_at.clone()));
+    assert!(recovered.min_remaining().is_some());
+}
+
+#[tokio::test]
+async fn distinguishes_network_service_response_and_rejected_sign_in_with_history() {
+    let fixture = Fixture::new();
+    let success = fixture.seed().await;
+    let offline = fixture.fetch(NO_HTTP).await;
+    assert_eq!(offline.fetch_issue, Some(FetchIssue::Network));
+    assert!(!offline.needs_auth);
+    assert!(offline.stale);
+    assert_eq!(offline.last_success_at, success.last_success_at);
+    for (status, body, fetch_issue, credential_issue) in [
+        (503, "{}", Some(FetchIssue::Service), None),
+        (200, "{", Some(FetchIssue::Response), None),
+        (401, "{}", None, Some(CredentialIssue::Rejected)),
+        (403, "{}", None, Some(CredentialIssue::Rejected)),
+    ] {
+        let server = Server::start(vec![(status, body.as_bytes().to_vec())], |_| {});
+        let failed = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(failed.fetch_issue, fetch_issue);
+        assert_eq!(failed.credential_issue, credential_issue);
+        assert_eq!(failed.needs_auth, credential_issue.is_some());
+        assert!(failed.stale);
+        assert_eq!(failed.windows[0].used, 23.0);
+        assert_eq!(failed.last_success_at, success.last_success_at);
+        assert_eq!(failed.min_remaining(), None);
+    }
+}
+
+#[tokio::test]
+async fn clears_history_across_refreshes_even_if_the_new_principal_has_the_same_email() {
+    for field in ["email", "user_id", "principal_type", "principal_id", "team_id"] {
+        let fixture = Fixture::new();
+        fixture.seed().await;
+        let mut replacement = entry("a@example.com", "replacement-token");
+        replacement[field] = json!("other");
+        fixture.write(replacement);
+        let failed = fixture.fetch(NO_HTTP).await;
+        assert!(!failed.stale, "cached a different {field}");
+        assert!(failed.windows.is_empty());
+        assert!(failed.last_success_at.is_none());
+        assert!(failed.plan.is_none());
+        // Switching back must not revive an old account's history either.
+        fixture.write(entry("a@example.com", "original-token"));
+        assert!(fixture.fetch(NO_HTTP).await.windows.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn unknown_identity_discards_history_and_does_not_restore_it_from_a_later_read() {
+    for failure in ["missing", "invalid", "unreadable", "unsupported", "ambiguous"] {
+        let fixture = Fixture::new();
+        fixture.seed().await;
+        match failure {
+            "missing" => std::fs::remove_file(&fixture.0).unwrap(),
+            "invalid" => std::fs::write(&fixture.0, b"{").unwrap(),
+            "unreadable" => {
+                std::fs::remove_file(&fixture.0).unwrap();
+                std::fs::create_dir(&fixture.0).unwrap();
+            }
+            "unsupported" => std::fs::write(&fixture.0, br#"{"other":{}}"#).unwrap(),
+            _ => std::fs::write(&fixture.0, br#"{"https://auth.x.ai::a":{},"https://auth.x.ai::b":{}}"#).unwrap(),
+        }
+        let failed = fixture.fetch(NO_HTTP).await;
+        assert!(failed.credential_issue.is_some());
+        assert!(!failed.stale);
+        assert!(failed.windows.is_empty());
+        assert!(failed.account_id.is_none());
+        assert!(failed.last_success_at.is_none());
+        if failure == "unreadable" { std::fs::remove_dir(&fixture.0).unwrap(); }
+        fixture.write(entry("a@example.com", "original-token"));
+        assert!(fixture.fetch(NO_HTTP).await.windows.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn different_directory_or_scope_cannot_reuse_history() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let other = Fixture::new();
+    other.write(entry("a@example.com", "original-token"));
+    let snapshot = fixture.1.fetch_from_path(&client(), &other.0, None, NO_HTTP, NO_HTTP).await;
+    assert!(snapshot.windows.is_empty());
+    assert!(!snapshot.stale);
+
+    fixture.seed().await;
+    std::fs::write(&fixture.0, serde_json::to_vec(&json!({
+        "https://accounts.x.ai/sign-in": entry("a@example.com", "original-token"),
+    })).unwrap()).unwrap();
+    assert!(fixture.fetch(NO_HTTP).await.windows.is_empty());
+}
+
+#[tokio::test]
+async fn grpc_failure_preserves_history_but_a_successful_no_quota_response_supersedes_it() {
+    let fixture = Fixture::new();
+    let success = fixture.seed().await;
+    for (status, body, issue) in [(503, b"{}".to_vec(), FetchIssue::Service), (200, b"invalid frame".to_vec(), FetchIssue::Response)] {
+        let server = Server::start(vec![
+            (200, br#"{"config":{}}"#.to_vec()), (200, SETTINGS.as_bytes().to_vec()), (status, body),
+        ], |_| {});
+        let failed = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(failed.fetch_issue, Some(issue));
+        assert!(failed.stale);
+        assert_eq!(failed.last_success_at, success.last_success_at);
+    }
+    let server = Server::start(vec![(200, b"{}".to_vec()), (200, SETTINGS.as_bytes().to_vec())], |_| {});
+    let empty = fixture.fetch(&server.endpoint).await;
+    server.finish("original-token");
+    assert!(!empty.stale);
+    assert!(empty.note.is_some());
+    assert!(empty.windows.is_empty());
+    assert!(fixture.fetch(NO_HTTP).await.windows.is_empty());
+}
+
+#[tokio::test]
+async fn concurrent_refreshes_are_serialized_and_preserve_the_newest_success() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let mut started_tx = Some(started_tx);
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let slow = Server::start(vec![(503, b"{}".to_vec())], move |_| {
+        started_tx.take().unwrap().send(()).unwrap();
+        release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    let requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let requested_in_server = requested.clone();
+    let fast = Server::start(vec![
+        (200, BILLING.replace("23", "44").into_bytes()), (200, SETTINGS.as_bytes().to_vec()),
+    ], move |_| { requested_in_server.store(true, Ordering::SeqCst); });
+    let second = async {
+        started_rx.await.unwrap();
+        let release = async {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            assert!(!requested.load(Ordering::SeqCst), "overlapping HTTP requests");
+            release_tx.send(()).unwrap();
+        };
+        let (snapshot, ()) = tokio::join!(fixture.fetch(&fast.endpoint), release);
+        snapshot
+    };
+    let (failed, recovered) = tokio::join!(fixture.fetch(&slow.endpoint), second);
+    slow.finish("original-token");
+    fast.finish("original-token");
+    assert!(failed.stale);
+    assert_eq!(failed.windows[0].used, 23.0);
+    assert!(!recovered.stale);
+    assert_eq!(recovered.windows[0].used, 44.0);
+    let next_failure = fixture.fetch(NO_HTTP).await;
+    assert_eq!(next_failure.windows[0].used, 44.0);
+    assert_eq!(next_failure.last_success_at, recovered.last_success_at);
+}
+
+#[test]
+fn monitor_debounces_creation_replacement_and_deletion_and_ignores_unchanged_rewrites() {
+    let fixture = Fixture::new();
+    assert!(!fixture.poll()); // a missing file is a valid baseline
+    fixture.write(entry("a@example.com", "original-token"));
+    assert!(!fixture.poll());
+    assert!(fixture.poll());
+    for _ in 0..3 {
+        fixture.write(entry("a@example.com", "original-token"));
+        assert!(!fixture.poll());
+    }
+
+    std::fs::write(&fixture.0, b"{").unwrap();
+    assert!(!fixture.poll());
+    let replacement = fixture.0.with_extension("replacement");
+    write_auth(&replacement, entry("a@example.com", "renewed-token"));
+    std::fs::rename(&replacement, &fixture.0).unwrap();
+    assert!(!fixture.poll());
+    assert!(fixture.poll());
+    assert!(!fixture.poll());
+
+    std::fs::remove_file(&fixture.0).unwrap();
+    std::fs::remove_dir(fixture.0.parent().unwrap()).unwrap();
+    assert!(!fixture.poll());
+    assert!(fixture.poll());
+    assert!(!fixture.poll());
+    std::fs::create_dir(fixture.0.parent().unwrap()).unwrap();
+    fixture.write(entry("a@example.com", "renewed-token"));
+    assert!(!fixture.poll());
+    assert!(fixture.poll());
+}
+
+#[test]
+fn monitor_detects_expiry_without_a_file_change_and_ignores_unselected_records() {
+    let fixture = Fixture::new();
+    fixture.write(entry("a@example.com", "original-token"));
+    assert!(!fixture.poll());
+    std::fs::write(&fixture.0, serde_json::to_vec(&json!({
+        SCOPE: entry("a@example.com", "original-token"), "unrelated": { "key": 42 },
+    })).unwrap()).unwrap();
+    assert!(!fixture.poll());
+    assert!(!fixture.poll());
+    let expired_at = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+    let stamp = monitor::Stamp::read(Ok(fixture.0.clone()), expired_at);
+    let mut monitor = fixture.1.monitor.lock().unwrap();
+    assert!(!monitor.observe(stamp.clone()));
+    assert!(monitor.observe(stamp.clone()));
+    assert!(!monitor.observe(stamp));
+}
+
+#[tokio::test]
+async fn a_change_during_a_request_is_detected_afterwards_and_the_new_account_recovers() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    assert!(!fixture.poll());
+    let path = fixture.0.clone();
+    let server = Server::usage(move |index| {
+        if index == 0 { write_auth(&path, entry("b@example.com", "replacement-token")); }
+    });
+    let changed = fixture.fetch(&server.endpoint).await;
+    server.finish("original-token");
+    assert_no_usage(&changed, CredentialIssue::Changed);
+    assert!(!fixture.poll());
+    assert!(fixture.poll());
+    let next = Server::usage(|_| {});
+    let recovered = fixture.fetch(&next.endpoint).await;
+    next.finish("replacement-token");
+    assert_eq!(recovered.account_id.as_deref(), Some("b@example.com"));
+    assert!(!recovered.stale);
+    assert_eq!(recovered.credential_issue, None);
+    assert_eq!(recovered.windows[0].used, 23.0);
+    assert!(!fixture.poll());
+}
+
+#[tokio::test]
+async fn transient_read_failure_recovers_even_when_the_same_credentials_return_between_polls() {
+    for during_request in [false, true] {
+        let fixture = Fixture::new();
+        fixture.seed().await;
+        assert!(!fixture.poll());
+        let failed = if during_request {
+            let path = fixture.0.clone();
+            let server = Server::usage(move |index| {
+                if index == 1 { std::fs::remove_file(&path).unwrap(); }
+            });
+            let snapshot = fixture.fetch(&server.endpoint).await;
+            server.finish("original-token");
+            snapshot
+        } else {
+            std::fs::remove_file(&fixture.0).unwrap();
+            fixture.fetch(NO_HTTP).await
+        };
+        assert_no_usage(&failed, CredentialIssue::Missing);
+        // No monitor poll saw the missing file. Its original contents return unchanged.
+        fixture.write(entry("a@example.com", "original-token"));
+        assert!(!fixture.poll());
+        assert!(fixture.poll());
+        let server = Server::usage(|_| {});
+        let recovered = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert!(!recovered.stale);
+        assert_eq!(recovered.credential_issue, None);
+        assert_eq!(recovered.windows[0].used, 23.0);
+        assert!(!fixture.poll());
+    }
+}
+
+#[tokio::test]
+async fn changed_sign_in_recovers_when_original_credentials_return_before_polling() {
+    for same_account in [false, true] {
+        let fixture = Fixture::new();
+        fixture.seed().await;
+        let path = fixture.0.clone();
+        let replacement_email = if same_account { "a@example.com" } else { "b@example.com" };
+        let responses = if same_account {
+            vec![(401, b"{}".to_vec())]
+        } else {
+            vec![(200, BILLING.as_bytes().to_vec()), (200, SETTINGS.as_bytes().to_vec())]
+        };
+        let server = Server::start(responses, move |_| {
+            write_auth(&path, entry(replacement_email, "replacement-token"));
+        });
+        let changed = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(changed.credential_issue, Some(CredentialIssue::Changed));
+        if !same_account { assert_no_usage(&changed, CredentialIssue::Changed); }
+
+        // The monitor never sees B. Returning to exactly A must still recover from Changed.
+        fixture.write(entry("a@example.com", "original-token"));
+        assert!(!fixture.poll());
+        assert!(fixture.poll());
+        assert!(!fixture.poll(), "a pending retry must only be scheduled once");
+        let server = Server::usage(|_| {});
+        let recovered = fixture.fetch(&server.endpoint).await;
+        server.finish("original-token");
+        assert_eq!(recovered.account_id.as_deref(), Some("a@example.com"));
+        assert_eq!(recovered.credential_issue, None);
+        assert!(!recovered.stale);
+        assert_eq!(recovered.windows[0].used, 23.0);
+        assert!(!fixture.poll());
+        assert!(!fixture.poll());
+    }
+}
+
+#[tokio::test]
+async fn manual_refresh_satisfies_a_pending_retry_after_an_account_change() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let path = fixture.0.clone();
+    let server = Server::usage(move |_| {
+        write_auth(&path, entry("b@example.com", "replacement-token"));
+    });
+    let changed = fixture.fetch(&server.endpoint).await;
+    server.finish("original-token");
+    assert_no_usage(&changed, CredentialIssue::Changed);
+    fixture.write(entry("a@example.com", "original-token"));
+    assert!(!fixture.poll());
+    let server = Server::usage(|_| {});
+    let recovered = fixture.fetch(&server.endpoint).await;
+    server.finish("original-token");
+    assert_eq!(recovered.credential_issue, None);
+    assert!(!fixture.poll());
+    assert!(!fixture.poll(), "manual recovery must not leave a redundant retry queued");
+}
+
+async fn assert_body_transport_failure_is_network(timeout: bool) {
+    for grpc in [false, true] {
+        let fixture = Fixture::new();
+        let success = fixture.seed().await;
+        let http = reqwest::Client::builder().no_proxy()
+            .read_timeout(Duration::from_secs(1)).timeout(Duration::from_secs(5)).build().unwrap();
+        let (broken, release) = Server::partial_body();
+        if !timeout { release.send(()).unwrap(); }
+        let proxy = grpc.then(|| Server::start(vec![
+            (200, br#"{"config":{}}"#.to_vec()), (200, SETTINGS.as_bytes().to_vec()),
+        ], |_| {}));
+        let endpoint = proxy.as_ref().map_or(broken.endpoint.as_str(), |server| server.endpoint.as_str());
+        let failed = fixture.1.fetch_from_path(&http, &fixture.0, None, endpoint, &broken.endpoint).await;
+        if timeout { release.send(()).unwrap(); }
+        broken.finish("original-token");
+        if let Some(proxy) = proxy { proxy.finish("original-token"); }
+        assert_eq!(failed.fetch_issue, Some(FetchIssue::Network), "grpc={grpc}, timeout={timeout}");
+        assert!(!failed.needs_auth);
+        assert_eq!(failed.credential_issue, None);
+        assert!(failed.stale);
+        assert_eq!(failed.last_success_at, success.last_success_at);
+        assert_eq!(failed.windows[0].used, 23.0);
+        assert_eq!(failed.min_remaining(), None);
+    }
+}
+
+#[tokio::test]
+async fn response_body_timeout_is_a_network_failure() {
+    assert_body_transport_failure_is_network(true).await;
+}
+
+#[tokio::test]
+async fn response_body_disconnect_is_a_network_failure() {
+    assert_body_transport_failure_is_network(false).await;
 }
